@@ -367,6 +367,7 @@
 
         <!-- 工具栏 -->
         <div id="mini-tools">
+            <button class="tool-btn" id="btn-camera" title="切换视角 (当前: 3D沉浸) [V]">🎥</button>
             <button class="tool-btn" id="btn-sound" title="音效">🔊</button>
             <button class="tool-btn" id="btn-pitch" title="切换草坪 (🌿/🏁/💎)">🌿</button>
             <button class="tool-btn" id="btn-skin" title="换球皮">⚽</button>
@@ -709,7 +710,24 @@
         let screenShake = 0;
         let bulletTimeTimer = 0;
         let goalCelebrationTimer = 0;
-        let baseCamPos = new THREE.Vector3(0, 52, 11.5);
+        let currentCameraMode = '3d'; // '3d' | 'top'
+        const CAM_CONFIGS = {
+            '3d': {
+                mobile: { pos: new THREE.Vector3(0, 31.0, 26.5), target: new THREE.Vector3(0, 0.5, -1.5), fov: 53 },
+                desktop: { pos: new THREE.Vector3(0, 26.5, 23.0), target: new THREE.Vector3(0, 0.5, -1.8), fov: 48 }
+            },
+            'top': {
+                mobile: { pos: new THREE.Vector3(0, 54.0, 14.5), target: new THREE.Vector3(0, 0, 0), fov: 46 },
+                desktop: { pos: new THREE.Vector3(0, 46.0, 11.0), target: new THREE.Vector3(0, 0, 0), fov: 44 }
+            }
+        };
+        let targetCamPos = new THREE.Vector3(0, 26.5, 23.0);
+        let targetCamLook = new THREE.Vector3(0, 0.5, -1.8);
+        let currentCamPos = new THREE.Vector3(0, 26.5, 23.0);
+        let currentCamLook = new THREE.Vector3(0, 0.5, -1.8);
+        let baseCamPos = new THREE.Vector3(0, 26.5, 23.0);
+        let towerSpotLights = [];
+        let volumetricCones = [];
 
         // 宏伟球场全景氛围全局引用 (源自前期高精插画：看台天幕/环场LED/金杯展台/礼花系统)
         let ledTexLeft = null, ledTexRight = null;
@@ -1177,9 +1195,9 @@
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x0b1322); // 第一版高级深邃纯净 Slate 蓝
 
-            // 精准计算的黄金俯角：FOV 46度保证顶部球门与底部底网同时拥有充足留白，彻底告别遮挡
-            camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 500);
-            updateCameraPosition();
+            // 精准计算的黄金 3D 视角：默认 48 度 FOV，兼顾宏伟球场纵深与推杆清晰触控
+            camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 500);
+            updateCameraPosition(true);
 
             renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1187,15 +1205,15 @@
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
-            renderer.toneMappingExposure = 1.2;
+            renderer.toneMappingExposure = 1.18;
             container.appendChild(renderer.domElement);
 
-            const amb = new THREE.AmbientLight(0xffffff, 0.55);
+            const amb = new THREE.AmbientLight(0xdbeafe, 0.45);
             scene.add(amb);
 
-            // 主探照灯：照射草叶切面形成真实 3D 微观阴影与高光
-            const sun = new THREE.DirectionalLight(0xfffaed, 1.45);
-            sun.position.set(10, 42, 14);
+            // 主漫射光：提供整体草坪微观反光
+            const sun = new THREE.DirectionalLight(0xfffaed, 0.75);
+            sun.position.set(12, 38, 14);
             sun.castShadow = true;
             sun.shadow.mapSize.width = 2048;
             sun.shadow.mapSize.height = 2048;
@@ -1209,31 +1227,71 @@
             scene.add(sun);
 
             // 副球场冷白探照灯：营造夜场世界杯立体轮廓反光
-            const flood = new THREE.DirectionalLight(0x93c5fd, 0.42);
-            flood.position.set(-14, 32, -18);
+            const flood = new THREE.DirectionalLight(0x60a5fa, 0.35);
+            flood.position.set(-14, 28, -18);
             scene.add(flood);
+
+            // 欧冠标志性四角探照灯塔定向聚光（真实 4 道交叉立体软阴影）
+            const towerCoords = [
+                { x: -11.0, z: -16.8, tx: -1.2, tz: -3.0 },
+                { x: 11.0, z: -16.8, tx: 1.2, tz: -3.0 },
+                { x: -11.0, z: 16.8, tx: -1.2, tz: 3.0 },
+                { x: 11.0, z: 16.8, tx: 1.2, tz: 3.0 }
+            ];
+            towerCoords.forEach(tc => {
+                const spot = new THREE.SpotLight(0xfffaed, 0.95);
+                spot.position.set(tc.x, 14.5, tc.z);
+                spot.target.position.set(tc.tx, 0, tc.tz);
+                scene.add(spot.target);
+                spot.angle = Math.PI / 3.4;
+                spot.penumbra = 0.65;
+                spot.distance = 55;
+                spot.castShadow = true;
+                spot.shadow.mapSize.width = 1024;
+                spot.shadow.mapSize.height = 1024;
+                spot.shadow.camera.near = 5;
+                spot.shadow.camera.far = 50;
+                spot.shadow.bias = -0.0006;
+                scene.add(spot);
+                towerSpotLights.push(spot);
+            });
 
             window.addEventListener('resize', () => {
                 camera.aspect = window.innerWidth / window.innerHeight;
-                updateCameraPosition();
-                camera.updateProjectionMatrix();
+                updateCameraPosition(true);
                 renderer.setSize(window.innerWidth, window.innerHeight);
             });
         }
 
-        function updateCameraPosition() {
+        function updateCameraPosition(instant = false) {
             const aspect = window.innerWidth / window.innerHeight;
-            if (aspect < 0.6) {
-                // 竖屏手机：高度 54，Z轴 14.5，视点对准 0，确保球门两端皆有宽敞空间
-                baseCamPos.set(0, 54, 14.5);
-                camera.position.copy(baseCamPos);
-                camera.lookAt(0, 0, 0.0);
-            } else {
-                baseCamPos.set(0, 46, 11.0);
-                camera.position.copy(baseCamPos);
-                camera.lookAt(0, 0, 0.0);
+            const isMobile = (aspect < 0.65);
+            const cfg = CAM_CONFIGS[currentCameraMode][isMobile ? 'mobile' : 'desktop'];
+            targetCamPos.copy(cfg.pos);
+            targetCamLook.copy(cfg.target);
+            camera.fov = cfg.fov;
+            camera.updateProjectionMatrix();
+
+            if (instant) {
+                currentCamPos.copy(targetCamPos);
+                currentCamLook.copy(targetCamLook);
+                camera.position.copy(currentCamPos);
+                camera.lookAt(currentCamLook);
             }
         }
+
+        function toggleCameraMode() {
+            currentCameraMode = (currentCameraMode === '3d') ? 'top' : '3d';
+            updateCameraPosition(false);
+            const btnCam = document.getElementById('btn-camera');
+            if (btnCam) {
+                btnCam.innerText = (currentCameraMode === '3d') ? '🎥' : '📐';
+                btnCam.title = (currentCameraMode === '3d') ? '切换视角 (当前: 3D沉浸) [V]' : '切换视角 (当前: 战术俯视) [V]';
+            }
+            showPitchToast(currentCameraMode === '3d' ? '🎥 切换为：3D 沉浸转播视角' : '📐 切换为：战术高空俯瞰视角');
+            Sound.play('bounce', 0.5, 1.6);
+        }
+        window.toggleCameraMode = toggleCameraMode;
 
         function loadAllAssets(done) {
             const loader = new THREE.TextureLoader();
@@ -1298,7 +1356,32 @@
                 textures.grassAO.anisotropy = maxAniso;
             }
 
-            // 2. 3D 立体草台土壤基底（深色草根泥土倒角，赋予球台真实物理厚度）
+            // 2. 下沉式环场专业塑胶跑道基台与草台土壤（深色聚氨酯跑道 + 白线分道 + 真实物理落差）
+            const trackW = pitchW + 5.2, trackL = pitchL + 5.2;
+            const trackGeo = new THREE.BoxGeometry(trackW, 0.32, trackL);
+            const trackMat = new THREE.MeshStandardMaterial({
+                color: 0x131d2e,
+                roughness: 0.88,
+                metalness: 0.12
+            });
+            const trackMesh = new THREE.Mesh(trackGeo, trackMat);
+            trackMesh.position.set(0, -0.22, 1.0);
+            trackMesh.receiveShadow = true;
+            scene.add(trackMesh);
+
+            // 跑道分界白线
+            const trackLineMat = new THREE.MeshBasicMaterial({ color: 0x94a3b8, transparent: true, opacity: 0.45 });
+            [-1.8, -1.0, 1.0, 1.8].forEach(offset => {
+                const lw = (pitchW / 2) + 1.2 + offset;
+                [-lw, lw].forEach(lx => {
+                    const lineMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.08, trackL - 2.0), trackLineMat);
+                    lineMesh.rotation.x = -Math.PI / 2;
+                    lineMesh.position.set(lx, -0.05, 1.0);
+                    scene.add(lineMesh);
+                });
+            });
+
+            // 草台土壤基底
             const baseGeo = new THREE.BoxGeometry(pitchW, 0.22, pitchL);
             const baseMat = new THREE.MeshStandardMaterial({
                 color: 0x091c0e,
@@ -1307,7 +1390,22 @@
             });
             const baseMesh = new THREE.Mesh(baseGeo, baseMat);
             baseMesh.position.set(0, -0.11, 1.0);
+            baseMesh.receiveShadow = true;
             scene.add(baseMesh);
+
+            // 3D 灰色路缘石包边（Turf Curbs）
+            const curbMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5, metalness: 0.4 });
+            const curbH = 0.12;
+            [-pitchW / 2, pitchW / 2].forEach(cx => {
+                const curb = new THREE.Mesh(new THREE.BoxGeometry(0.16, curbH, pitchL), curbMat);
+                curb.position.set(cx, -0.03, 1.0);
+                scene.add(curb);
+            });
+            [G.topZ - 1.8, G.topZ + pitchL - 1.8].forEach(cz => {
+                const curb = new THREE.Mesh(new THREE.BoxGeometry(pitchW, curbH, 0.16), curbMat);
+                curb.position.set(0, -0.03, cz);
+                scene.add(curb);
+            });
 
             // 3. 顶级 3D 拟真 PBR 绿茵草皮（法线凹凸 + 粗糙度高光 + 根部环境光遮挡）
             const pitchGeo = new THREE.PlaneGeometry(pitchW, pitchL, 32, 64);
@@ -1998,6 +2096,24 @@
             return new THREE.CanvasTexture(canvas);
         }
 
+        function createSpotlightConeTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createLinearGradient(0, 0, 0, 256);
+            grad.addColorStop(0.0, 'rgba(255, 255, 255, 0.45)');
+            grad.addColorStop(0.20, 'rgba(224, 242, 254, 0.30)');
+            grad.addColorStop(0.60, 'rgba(56, 189, 248, 0.10)');
+            grad.addColorStop(1.0, 'rgba(11, 19, 34, 0.0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 64, 256);
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.ClampToEdgeWrapping;
+            tex.wrapT = THREE.ClampToEdgeWrapping;
+            return tex;
+        }
+
         function buildStadiumAtmosphere() {
             // 1. 宏伟远景看台天幕与夜空射灯穹顶 (Stadium Panoramic Grandstand Backdrop)
             if (textures.stadium_backdrop) {
@@ -2055,17 +2171,24 @@
                 screenRight.rotation.z = 0.38;
                 scene.add(screenRight);
 
-                // 曜黑铝合金结构机壳
+                // 曜黑铝合金结构机壳与斜向支撑底座
                 const frameMat = new THREE.MeshStandardMaterial({
                     color: 0x0f172a,
                     roughness: 0.2,
                     metalness: 0.8
                 });
-                [-8.42, 8.42].forEach(x => {
+                [-8.42, 8.42].forEach((x, sIdx) => {
                     const casing = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.95, 28.0), frameMat);
                     casing.position.set(x, 0.47, 1.0);
                     casing.castShadow = true;
                     scene.add(casing);
+
+                    // 地面斜向三角形金属防倾覆支架
+                    for (let bz = -12; bz <= 12; bz += 4.5) {
+                        const bracket = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.08, 0.12), frameMat);
+                        bracket.position.set(x + (sIdx === 0 ? -0.22 : 0.22), 0.04, bz);
+                        scene.add(bracket);
+                    }
                 });
 
                 // 顶沿科技霓虹光边 (左电光青蓝，右冠军流金)
@@ -2128,13 +2251,14 @@
                 scene.add(trophyGroup);
             }
 
-            // 5. 四角球场高空射灯塔与星芒光晕 (Corner Floodlight Pylons & Starburst Flares)
+            // 5. 四角球场高空射灯塔与星芒光晕 + 3D 空气体积光柱 (Floodlight Pylons & Volumetric Cones)
             const flareTex = createFlareTexture();
+            const coneTex = createSpotlightConeTexture();
             const towerPoles = [
-                { x: -10.5, z: -16.2, target: [0, 0, -4] },
-                { x: 10.5, z: -16.2, target: [0, 0, -4] },
-                { x: -10.5, z: 16.2, target: [0, 0, 4] },
-                { x: 10.5, z: 16.2, target: [0, 0, 4] }
+                { x: -11.0, z: -16.8, target: [-1.2, 0, -3.0] },
+                { x: 11.0, z: -16.8, target: [1.2, 0, -3.0] },
+                { x: -11.0, z: 16.8, target: [-1.2, 0, 3.0] },
+                { x: 11.0, z: 16.8, target: [1.2, 0, 3.0] }
             ];
             const poleMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.2 });
             const flareMat = new THREE.SpriteMaterial({
@@ -2142,23 +2266,140 @@
                 color: 0xffffff,
                 transparent: true,
                 blending: THREE.AdditiveBlending,
-                opacity: 0.9
+                opacity: 0.95
             });
 
             towerPoles.forEach(tp => {
-                const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 13.0, 8), poleMat);
-                mast.position.set(tp.x, 6.5, tp.z);
+                const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 14.0, 8), poleMat);
+                mast.position.set(tp.x, 7.0, tp.z);
                 scene.add(mast);
 
-                const head = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.85, 0.4), poleMat);
-                head.position.set(tp.x, 13.0, tp.z);
+                const head = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.95, 0.45), poleMat);
+                head.position.set(tp.x, 14.0, tp.z);
                 head.lookAt(tp.target[0], 0, tp.target[2]);
                 scene.add(head);
 
                 const flare = new THREE.Sprite(flareMat);
-                flare.position.set(tp.x, 13.2, tp.z);
-                flare.scale.set(4.5, 4.5, 1.0);
+                flare.position.set(tp.x, 14.2, tp.z);
+                flare.scale.set(4.8, 4.8, 1.0);
                 scene.add(flare);
+
+                // 3D 半透明夜场空气体积光柱 (Volumetric Spotlight Cone)
+                const coneGeo = new THREE.CylinderGeometry(0.40, 5.8, 18.0, 16, 1, true);
+                const coneMat = new THREE.MeshBasicMaterial({
+                    map: coneTex,
+                    transparent: true,
+                    opacity: 0.38,
+                    blending: THREE.AdditiveBlending,
+                    side: THREE.DoubleSide,
+                    depthWrite: false
+                });
+                const cone = new THREE.Mesh(coneGeo, coneMat);
+                cone.position.set(tp.x, 6.2, tp.z);
+                cone.lookAt(tp.target[0], -2.0, tp.target[2]);
+                cone.rotateX(Math.PI / 2);
+                scene.add(cone);
+                volumetricCones.push(cone);
+            });
+
+            // 6. 主客队 3D 实体替补席与教练指挥席 (Professional Team Dugouts)
+            const dugoutGroup = new THREE.Group();
+            const dugoutBase = new THREE.Mesh(
+                new THREE.BoxGeometry(1.6, 0.12, 7.6),
+                new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.7, metalness: 0.3 })
+            );
+            dugoutBase.position.set(0, 0.06, 0);
+            dugoutBase.receiveShadow = true;
+            dugoutGroup.add(dugoutBase);
+
+            // 弧形透明有机玻璃顶棚
+            const canopyGeo = new THREE.CylinderGeometry(1.2, 1.2, 7.5, 20, 1, true, 0, Math.PI * 0.58);
+            const canopyMat = new THREE.MeshStandardMaterial({
+                color: 0x93c5fd,
+                transparent: true,
+                opacity: 0.45,
+                roughness: 0.1,
+                metalness: 0.2,
+                side: THREE.DoubleSide
+            });
+            const canopy = new THREE.Mesh(canopyGeo, canopyMat);
+            canopy.rotation.z = Math.PI * 0.72;
+            canopy.position.set(0.45, 1.1, 0);
+            dugoutGroup.add(canopy);
+
+            // 金属框架拱肋 (Arch Ribs)
+            const ribMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.85, roughness: 0.2 });
+            [-3.6, -1.8, 0, 1.8, 3.6].forEach(z => {
+                const rib = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.035, 8, 16, Math.PI * 0.58), ribMat);
+                rib.rotation.z = Math.PI * 0.72;
+                rib.position.set(0.45, 1.1, z);
+                dugoutGroup.add(rib);
+            });
+
+            // 8 张专业赛车风格桶形座椅 (4张主队切尔西蓝，4张客队激情红)
+            const seatPanGeo = new THREE.BoxGeometry(0.38, 0.08, 0.36);
+            const seatBackGeo = new THREE.BoxGeometry(0.38, 0.42, 0.08);
+            const homeSeatMat = new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.4 });
+            const awaySeatMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
+
+            for (let i = 0; i < 8; i++) {
+                const isHome = (i < 4);
+                const sMat = isHome ? homeSeatMat : awaySeatMat;
+                const sz = -3.0 + i * 0.85;
+                const pan = new THREE.Mesh(seatPanGeo, sMat);
+                pan.position.set(-0.15, 0.24, sz);
+                dugoutGroup.add(pan);
+
+                const back = new THREE.Mesh(seatBackGeo, sMat);
+                back.position.set(-0.30, 0.44, sz);
+                back.rotation.y = 0.1;
+                dugoutGroup.add(back);
+            }
+            dugoutGroup.position.set(-8.85, 0.02, 1.0);
+            scene.add(dugoutGroup);
+
+            // 7. 场边 3D 专业转播摄像机机位 (Sideline TV Broadcast Camera)
+            const camGroup = new THREE.Group();
+            const tripodMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.7, roughness: 0.3 });
+            for (let a = 0; a < 3; a++) {
+                const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.2), tripodMat);
+                leg.rotation.z = 0.25;
+                leg.rotation.y = a * (Math.PI * 2 / 3);
+                leg.position.set(0, 0.55, 0);
+                camGroup.add(leg);
+            }
+            const camBody = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.28, 0.52), new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 }));
+            camBody.position.set(0, 1.25, 0);
+            camGroup.add(camBody);
+
+            const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.09, 0.45, 16), new THREE.MeshStandardMaterial({ color: 0x111827, metalness: 0.8, roughness: 0.2 }));
+            lens.rotation.x = Math.PI / 2;
+            lens.position.set(0, 1.25, -0.42);
+            camGroup.add(lens);
+
+            const tally = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 8), new THREE.MeshBasicMaterial({ color: 0xef4444 }));
+            tally.position.set(0, 1.42, 0.2);
+            camGroup.add(tally);
+
+            camGroup.position.set(9.6, -0.05, -1.5);
+            camGroup.lookAt(0, 0.8, -1.5);
+            scene.add(camGroup);
+
+            // 8. 高空悬挑钢桁架顶棚 (Stadium Cantilever Roof Trusses)
+            const trussMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, metalness: 0.75, roughness: 0.25 });
+            [-1, 1].forEach(side => {
+                const trussGroup = new THREE.Group();
+                for (let tz = -18; tz <= 18; tz += 6) {
+                    const girder = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.22, 0.22), trussMat);
+                    girder.position.set(side * 11.2, 16.5, tz);
+                    girder.rotation.z = side * -0.15; // 欧式轻微下悬挑
+                    trussGroup.add(girder);
+
+                    const pod = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.18, 0.35), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+                    pod.position.set(side * 9.5, 16.2, tz);
+                    trussGroup.add(pod);
+                }
+                scene.add(trussGroup);
             });
         }
 
@@ -2738,17 +2979,86 @@
         window.handleStageLose = handleStageLose;
         window.setTargetScore = setTargetScore;
 
+        let shadowDiscTex = null;
+        function getShadowDiscTexture() {
+            if (!shadowDiscTex) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 64; canvas.height = 64;
+                const ctx = canvas.getContext('2d');
+                const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+                grad.addColorStop(0.0, 'rgba(5, 10, 20, 0.70)');
+                grad.addColorStop(0.5, 'rgba(5, 10, 20, 0.30)');
+                grad.addColorStop(1.0, 'rgba(5, 10, 20, 0.0)');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, 64, 64);
+                shadowDiscTex = new THREE.CanvasTexture(canvas);
+            }
+            return shadowDiscTex;
+        }
+
+        const numberBadgeTexCache = {};
+        function getNumberBadgeTexture(num) {
+            if (!numberBadgeTexCache[num]) {
+                const canvas = document.createElement('canvas');
+                canvas.width = 64; canvas.height = 64;
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+                ctx.font = 'bold 42px Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(String(num), 32, 32);
+                numberBadgeTexCache[num] = new THREE.CanvasTexture(canvas);
+            }
+            return numberBadgeTexCache[num];
+        }
+
         function makeHumanoid(jersey, shorts, boots, role, cfg = {}) {
             const root = new THREE.Group();
-            const skinMat = new THREE.MeshStandardMaterial({ color: 0xfbcfe8 });
-            const jerseyMat = new THREE.MeshStandardMaterial({ color: jersey });
-            const shortsMat = new THREE.MeshStandardMaterial({ color: shorts });
-            const bootsMat = new THREE.MeshStandardMaterial({ color: boots });
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xfbcfe8, roughness: 0.55 });
+            const jerseyMat = new THREE.MeshStandardMaterial({ color: jersey, roughness: 0.45 });
+            const shortsMat = new THREE.MeshStandardMaterial({ color: shorts, roughness: 0.50 });
+            const bootsMat = new THREE.MeshStandardMaterial({ color: boots, roughness: 0.35 });
 
-            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.95, 0.48), jerseyMat);
+            // 0. 脚底柔和环境光遮挡接触阴影圆盘 (AO Contact Shadow Decal)
+            const shadowDisc = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.85, 0.85),
+                new THREE.MeshBasicMaterial({
+                    map: getShadowDiscTexture(),
+                    transparent: true,
+                    opacity: 0.75,
+                    depthWrite: false
+                })
+            );
+            shadowDisc.rotation.x = -Math.PI / 2;
+            shadowDisc.position.set(0, 0.02, 0);
+            root.add(shadowDisc);
+
+            // 1. 健美流线躯干 (Tapered Athletic Torso)
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.94, 0.46), jerseyMat);
             torso.position.y = 1.35;
             torso.castShadow = true;
             root.add(torso);
+
+            // 球衣背部 3D 印号 (Jersey Back Number)
+            if (cfg.number) {
+                const numMat = new THREE.MeshBasicMaterial({
+                    map: getNumberBadgeTexture(cfg.number),
+                    transparent: true,
+                    side: THREE.FrontSide
+                });
+                const numMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.44), numMat);
+                numMesh.position.set(0, 0.04, -0.235);
+                numMesh.rotation.y = Math.PI;
+                torso.add(numMesh);
+            }
+
+            // 队徽微章 (Chest Crest)
+            const crestMesh = new THREE.Mesh(
+                new THREE.CircleGeometry(0.065, 12),
+                new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+            );
+            crestMesh.position.set(-0.22, 0.22, 0.235);
+            torso.add(crestMesh);
 
             const headGroup = new THREE.Group();
             headGroup.position.y = 0.68;
@@ -2757,40 +3067,99 @@
             const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 16), skinMat);
             head.castShadow = true;
             headGroup.add(head);
-            const hair = new THREE.Mesh(new THREE.SphereGeometry(0.36, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+            const hair = new THREE.Mesh(new THREE.SphereGeometry(0.36, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 }));
             hair.position.y = 0.02;
             hair.castShadow = true;
             headGroup.add(hair);
 
+            // 双臂与短袖 (Arms with Jersey Short Sleeves)
+            const sleeveMat = new THREE.MeshStandardMaterial({ color: jersey, roughness: 0.45 });
+            const sleeveTrimMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
+
             const lArm = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.7), skinMat);
             lArm.position.set(-0.5, 0.15, 0);
+            lArm.castShadow = true;
+            const lSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.13, 0.32), sleeveMat);
+            lSleeve.position.set(0, 0.18, 0);
+            lArm.add(lSleeve);
+            const lTrim = new THREE.Mesh(new THREE.CylinderGeometry(0.142, 0.138, 0.05), sleeveTrimMat);
+            lTrim.position.set(0, 0.03, 0);
+            lArm.add(lTrim);
             torso.add(lArm);
+
             const rArm = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.7), skinMat);
             rArm.position.set(0.5, 0.15, 0);
+            rArm.castShadow = true;
+            const rSleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.13, 0.32), sleeveMat);
+            rSleeve.position.set(0, 0.18, 0);
+            rArm.add(rSleeve);
+            const rTrim = new THREE.Mesh(new THREE.CylinderGeometry(0.142, 0.138, 0.05), sleeveTrimMat);
+            rTrim.position.set(0, 0.03, 0);
+            rArm.add(rTrim);
             torso.add(rArm);
 
-            const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.32, 0.44), shortsMat);
+            // 骨盆与球裤 (Pelvis & Shorts)
+            const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.32, 0.44), shortsMat);
             pelvis.position.y = 0.76;
+            pelvis.castShadow = true;
             root.add(pelvis);
 
+            // 足球长筒球袜与专业球鞋 (Long Football Socks & Boots)
+            const isKeeper = (role === 'top_keeper');
+            const sockColor = isKeeper ? 0x0f172a : 0xf8fafc;
+            const sockMat = new THREE.MeshStandardMaterial({ color: sockColor, roughness: 0.6 });
+            const cuffColor = isKeeper ? 0xf97316 : 0x2563eb;
+            const cuffMat = new THREE.MeshStandardMaterial({ color: cuffColor, roughness: 0.5 });
+            const bootSoleMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.85 });
+
+            // 左腿组
             const lLeg = new THREE.Group();
             lLeg.position.set(-0.24, 0.72, 0);
             const lt = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.11, 0.65), skinMat);
             lt.position.y = -0.32;
+            lt.castShadow = true;
             lLeg.add(lt);
+            // 护腿板与长筒袜
+            const lSock = new THREE.Mesh(new THREE.CylinderGeometry(0.138, 0.118, 0.42), sockMat);
+            lSock.position.set(0, -0.42, 0.02);
+            lSock.castShadow = true;
+            lLeg.add(lSock);
+            const lCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.144, 0.140, 0.08), cuffMat);
+            lCuff.position.set(0, -0.19, 0.02);
+            lLeg.add(lCuff);
+            // 专业足球鞋
             const lb = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, 0.4), bootsMat);
             lb.position.set(0, -0.68, 0.08);
+            lb.castShadow = true;
             lLeg.add(lb);
+            const lbSole = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.05, 0.44), bootSoleMat);
+            lbSole.position.set(0, -0.75, 0.08);
+            lLeg.add(lbSole);
             root.add(lLeg);
 
+            // 右腿组
             const rLeg = new THREE.Group();
             rLeg.position.set(0.24, 0.72, 0);
             const rt = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.11, 0.65), skinMat);
             rt.position.y = -0.32;
+            rt.castShadow = true;
             rLeg.add(rt);
+            // 护腿板与长筒袜
+            const rSock = new THREE.Mesh(new THREE.CylinderGeometry(0.138, 0.118, 0.42), sockMat);
+            rSock.position.set(0, -0.42, 0.02);
+            rSock.castShadow = true;
+            rLeg.add(rSock);
+            const rCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.144, 0.140, 0.08), cuffMat);
+            rCuff.position.set(0, -0.19, 0.02);
+            rLeg.add(rCuff);
+            // 专业足球鞋
             const rb = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, 0.4), bootsMat);
             rb.position.set(0, -0.68, 0.08);
+            rb.castShadow = true;
             rLeg.add(rb);
+            const rbSole = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.05, 0.44), bootSoleMat);
+            rbSole.position.set(0, -0.75, 0.08);
+            rLeg.add(rbSole);
             root.add(rLeg);
 
             root.position.set(cfg.baseX || 0, 0, cfg.baseZ || 0);
@@ -3579,6 +3948,9 @@
                 if (e.key === 'p' || e.key === 'P') {
                     setPitchStyle(currentPitchStyleIdx + 1);
                 }
+                if (e.key === 'v' || e.key === 'V') {
+                    toggleCameraMode();
+                }
             });
 
             window.addEventListener('keyup', e => {
@@ -3598,6 +3970,7 @@
             tRight.addEventListener('pointercancel', () => { keyState.right = false; });
 
             document.getElementById('btn-reset').addEventListener('click', resetBall);
+            document.getElementById('btn-camera').addEventListener('click', toggleCameraMode);
             document.getElementById('btn-sound').addEventListener('click', () => {
                 Sound.enabled = !Sound.enabled;
                 document.getElementById('btn-sound').innerText = Sound.enabled ? '🔊' : '🔇';
@@ -3728,18 +4101,27 @@
                 cf.clothGrp.rotation.z = Math.sin(elapsedTime * 2.6 + cf.phase) * 0.05;
             }
 
+            // 相机平滑阻尼过渡与动态微视差 (Smooth Camera Lerp & Parallax Tracking)
+            currentCamPos.lerp(targetCamPos, dt * 5.5);
+            currentCamLook.lerp(targetCamLook, dt * 5.5);
+
+            let camX = currentCamPos.x + (ball ? ball.x * 0.035 : 0);
+            let camY = currentCamPos.y;
+            let camZ = currentCamPos.z + (ball ? (ball.z - 1.0) * 0.025 : 0);
+
             if (screenShake > 0.01) {
-                camera.position.x = baseCamPos.x + (Math.random() - 0.5) * screenShake * 0.8;
-                camera.position.z = baseCamPos.z + (Math.random() - 0.5) * screenShake * 0.8;
+                camX += (Math.random() - 0.5) * screenShake * 0.8;
+                camZ += (Math.random() - 0.5) * screenShake * 0.8;
                 screenShake *= 0.88;
-            } else {
-                camera.position.copy(baseCamPos);
             }
 
             if (bulletTimeTimer > 0) {
-                camera.position.y += (42.0 - camera.position.y) * dt * 4.0;
-                camera.position.z += (5.0 - camera.position.z) * dt * 4.0;
+                camY += (42.0 - camY) * dt * 4.0;
+                camZ += (5.0 - camZ) * dt * 4.0;
             }
+
+            camera.position.set(camX, camY, camZ);
+            camera.lookAt(currentCamLook.x + (ball ? ball.x * 0.02 : 0), currentCamLook.y, currentCamLook.z);
 
             renderer.render(scene, camera);
         }
