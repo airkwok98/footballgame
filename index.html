@@ -1266,72 +1266,288 @@
         }
 
         /* ==========================================================================
-           5. 洁白圆管流线护栏 (Smooth Tubing Bumper Rails)
+           5. 竞技场级深空多层挡板围栏系统 (Architectural Stadium Dasher Board System)
+           告别粗糙水管拼接感，打造具有厚重基座、吸震胶条、航空合金压顶与欧冠冷光流线
            ========================================================================== */
-        function buildSmoothRails() {
-            const railMat = new THREE.MeshStandardMaterial({
-                color: 0xffffff,
-                roughness: 0.15,
-                metalness: 0.2
+        const cornerFlags = [];
+
+        function createCornerFlagTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 180;
+            const ctx = canvas.getContext('2d');
+
+            // 经典 FIFA 四分格红黄相间锦旗
+            ctx.fillStyle = '#dc2626'; // 正红
+            ctx.fillRect(0, 0, 128, 90);
+            ctx.fillRect(128, 90, 128, 90);
+
+            ctx.fillStyle = '#facc15'; // 亮金黄
+            ctx.fillRect(128, 0, 128, 90);
+            ctx.fillRect(0, 90, 128, 90);
+
+            // 细致布料织物微纹理与边缘包边
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = '#b91c1c';
+            ctx.strokeRect(2, 2, 252, 176);
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+            for (let y = 0; y < 180; y += 6) {
+                ctx.fillRect(0, y, 256, 2);
+            }
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+            return tex;
+        }
+
+        function createCornerFlag(x, z, baseAngle) {
+            const flagGrp = new THREE.Group();
+            flagGrp.position.set(x, 0.94, z); // 挺立于挡板压顶转角之上
+
+            // 旗杆：高强度柔性玻璃纤维/阳极氧化白合金
+            const poleGeo = new THREE.CylinderGeometry(0.035, 0.045, 1.85, 16);
+            const poleMat = new THREE.MeshStandardMaterial({
+                color: 0xf8fafc,
+                metalness: 0.3,
+                roughness: 0.25
             });
+            const pole = new THREE.Mesh(poleGeo, poleMat);
+            pole.position.set(0, 0.925, 0);
+            pole.castShadow = true;
+            flagGrp.add(pole);
 
-            const r = 0.35;
-            const hw = G.halfW;
-            const goalW = 6.8;
+            // 旗杆顶端金黄色防撞圆头
+            const finialGeo = new THREE.SphereGeometry(0.07, 16, 16);
+            const finialMat = new THREE.MeshStandardMaterial({
+                color: 0xf59e0b,
+                metalness: 0.85,
+                roughness: 0.2
+            });
+            const finial = new THREE.Mesh(finialGeo, finialMat);
+            finial.position.set(0, 1.85, 0);
+            flagGrp.add(finial);
 
-            addCylinderRail(-hw + 1.2, G.topZ, -goalW / 2, G.topZ, r, railMat);
-            addCylinderRail(goalW / 2, G.topZ, hw - 1.2, G.topZ, r, railMat);
+            // 旗面横向飘动总成
+            const clothGrp = new THREE.Group();
+            clothGrp.position.set(0, 1.50, 0);
+            clothGrp.rotation.y = baseAngle;
 
-            addCornerArc(-hw + 1.2, G.topZ + 1.2, 1.2, Math.PI * 1.5, Math.PI, r, railMat);
-            addCornerArc(hw - 1.2, G.topZ + 1.2, 1.2, Math.PI * 1.5, Math.PI * 2.0, r, railMat);
+            const flagTex = createCornerFlagTexture();
+            const flagGeo = new THREE.PlaneGeometry(0.85, 0.55, 8, 4);
+            const flagMat = new THREE.MeshStandardMaterial({
+                map: flagTex,
+                side: THREE.DoubleSide,
+                roughness: 0.65,
+                metalness: 0.08
+            });
+            const flagMesh = new THREE.Mesh(flagGeo, flagMat);
+            flagMesh.position.set(0.425, 0, 0); // 旗帜以旗杆为轴向内侧迎风招展
+            flagMesh.castShadow = true;
+            clothGrp.add(flagMesh);
 
-            addCylinderRail(-hw, G.topZ + 1.2, -hw, G.funnelTopZ, r, railMat);
-            addCylinderRail(hw, G.topZ + 1.2, hw, G.funnelTopZ, r, railMat);
+            flagGrp.add(clothGrp);
+            scene.add(flagGrp);
 
-            addCylinderRail(-hw, G.funnelTopZ, -G.pivotX, G.pivotZ, r, railMat);
-            addCylinderRail(hw, G.funnelTopZ, G.pivotX, G.pivotZ, r, railMat);
-
-            [-G.pivotX, G.pivotX].forEach(x => {
-                const post = new THREE.Mesh(
-                    new THREE.CylinderGeometry(0.48, 0.48, 1.0, 24),
-                    new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.5, roughness: 0.2 })
-                );
-                post.position.set(x, 0.5, G.pivotZ);
-                post.castShadow = true;
-                scene.add(post);
+            cornerFlags.push({
+                clothGrp,
+                baseAngle,
+                phase: Math.random() * Math.PI * 2
             });
         }
 
-        function addCylinderRail(x1, z1, x2, z2, r, mat) {
-            const p1 = new THREE.Vector3(x1, r + 0.15, z1);
-            const p2 = new THREE.Vector3(x2, r + 0.15, z2);
-            const dir = new THREE.Vector3().subVectors(p2, p1);
-            const len = dir.length();
+        function createTurretBumper(x, z, mats) {
+            const grp = new THREE.Group();
+            grp.position.set(x, 0, z);
+
+            // 1. 沉稳基座法兰盘
+            const baseGeo = new THREE.CylinderGeometry(0.58, 0.65, 0.16, 32);
+            const baseMesh = new THREE.Mesh(baseGeo, mats.base);
+            baseMesh.position.set(0, 0.08, 0);
+            baseMesh.castShadow = true;
+            baseMesh.receiveShadow = true;
+            grp.add(baseMesh);
+
+            // 2. 拉丝钛黑主柱体
+            const bodyGeo = new THREE.CylinderGeometry(0.46, 0.48, 0.72, 32);
+            const bodyMesh = new THREE.Mesh(bodyGeo, mats.body);
+            bodyMesh.position.set(0, 0.50, 0);
+            bodyMesh.castShadow = true;
+            bodyMesh.receiveShadow = true;
+            grp.add(bodyMesh);
+
+            // 3. 欧冠青色发光光环 (UEFA Cyan Halo Ring)
+            const ledRingGeo = new THREE.CylinderGeometry(0.485, 0.485, 0.08, 32);
+            const ledRing = new THREE.Mesh(ledRingGeo, mats.led);
+            ledRing.position.set(0, 0.70, 0);
+            grp.add(ledRing);
+
+            // 4. 合金过渡压领
+            const collarGeo = new THREE.CylinderGeometry(0.50, 0.46, 0.12, 32);
+            const collar = new THREE.Mesh(collarGeo, mats.cap);
+            collar.position.set(0, 0.90, 0);
+            collar.castShadow = true;
+            grp.add(collar);
+
+            // 5. 镜面抛光保护穹顶 (Chrome Dome Cap)
+            const domeGeo = new THREE.SphereGeometry(0.47, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.5);
+            const dome = new THREE.Mesh(domeGeo, mats.chrome);
+            dome.position.set(0, 0.95, 0);
+            dome.castShadow = true;
+            grp.add(dome);
+
+            scene.add(grp);
+        }
+
+        function addDasherWall(x1, z1, x2, z2, r, mats) {
+            const dx = x2 - x1;
+            const dz = z2 - z1;
+            const len = Math.hypot(dx, dz);
             if (len < 0.001) return;
 
-            const geo = new THREE.CylinderGeometry(r, r, len, 20);
-            const mesh = new THREE.Mesh(geo, mat);
-            mesh.position.copy(p1).addScaledVector(dir, 0.5);
-            mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
-            scene.add(mesh);
+            const mx = (x1 + x2) * 0.5;
+            const mz = (z1 + z2) * 0.5;
+            const ux = dx / len;
+            const uz = dz / len;
 
+            // 旋转使其局部X轴沿段延伸
+            const rotY = -Math.atan2(uz, ux);
+
+            // 计算朝向场外的法向量符号：局部 +Z 为 (-uz, ux)
+            // 球场中心在 (0, 0)，指向外侧的向量是 (mx, mz)
+            const dot = (-uz) * mx + ux * mz;
+            const outSign = (dot >= 0) ? 1.0 : -1.0;
+
+            const grp = new THREE.Group();
+            grp.position.set(mx, 0, mz);
+            grp.rotation.y = rotY;
+
+            // 1. 厚重暗板主墙身 (Slate Plinth Body)
+            const bodyGeo = new THREE.BoxGeometry(len, 0.84, 0.40);
+            const bodyMesh = new THREE.Mesh(bodyGeo, mats.body);
+            bodyMesh.position.set(0, 0.42, outSign * 0.04);
+            bodyMesh.castShadow = true;
+            bodyMesh.receiveShadow = true;
+            grp.add(bodyMesh);
+
+            // 2. 阳极氧化航空合金上压轨 (Aero-alloy Top Cap)
+            const capGeo = new THREE.BoxGeometry(len, 0.10, 0.48);
+            const capMesh = new THREE.Mesh(capGeo, mats.cap);
+            capMesh.position.set(0, 0.89, outSign * 0.04);
+            capMesh.castShadow = true;
+            grp.add(capMesh);
+
+            // 3. 场内高弹吸震橡胶条 (Inner Impact Rubber Bumper)
+            // 严丝合缝位于球撞击中心线高度 Y = 0.45，向场内突出
+            const bumpGeo = new THREE.BoxGeometry(len, 0.36, 0.12);
+            const bumpMesh = new THREE.Mesh(bumpGeo, mats.bumper);
+            bumpMesh.position.set(0, 0.45, -outSign * 0.28);
+            bumpMesh.castShadow = true;
+            bumpMesh.receiveShadow = true;
+            grp.add(bumpMesh);
+
+            // 4. 欧冠青色顶轨边缘导光条 (俯视视角清晰呈现利落科技轮廓)
+            const ledTopGeo = new THREE.BoxGeometry(len, 0.03, 0.04);
+            const ledTopMesh = new THREE.Mesh(ledTopGeo, mats.led);
+            ledTopMesh.position.set(0, 0.942, -outSign * 0.22);
+            grp.add(ledTopMesh);
+
+            // 4.1 立面凹槽冷光带
+            const ledSideGeo = new THREE.BoxGeometry(len, 0.05, 0.04);
+            const ledSideMesh = new THREE.Mesh(ledSideGeo, mats.led);
+            ledSideMesh.position.set(0, 0.81, -outSign * 0.20);
+            grp.add(ledSideMesh);
+
+            // 5. 地基深色基座护坎 (Base Foundation Trim)
+            const baseGeo = new THREE.BoxGeometry(len, 0.12, 0.46);
+            const baseMesh = new THREE.Mesh(baseGeo, mats.base);
+            baseMesh.position.set(0, 0.06, outSign * 0.04);
+            baseMesh.receiveShadow = true;
+            grp.add(baseMesh);
+
+            scene.add(grp);
+
+            // 物理碰撞段保持 100% 精确与原逻辑完全一致
             walls.push({ x1, z1, x2, z2, r });
         }
 
-        function addCornerArc(cx, cz, radius, a1, a2, r, mat) {
-            const steps = 8;
+        function addCornerDasherArc(cx, cz, radius, a1, a2, r, mats) {
+            const steps = 14; // 高精度圆弧细分，极致平滑过渡
             let prevX = cx + Math.cos(a1) * radius;
             let prevZ = cz + Math.sin(a1) * radius;
             for (let i = 1; i <= steps; i++) {
                 const a = a1 + (a2 - a1) * (i / steps);
                 const curX = cx + Math.cos(a) * radius;
                 const curZ = cz + Math.sin(a) * radius;
-                addCylinderRail(prevX, prevZ, curX, curZ, r, mat);
+                addDasherWall(prevX, prevZ, curX, curZ, r, mats);
                 prevX = curX;
                 prevZ = curZ;
             }
+        }
+
+        function buildSmoothRails() {
+            // 专业现代竞技场挡板材质集
+            const mats = {
+                body: new THREE.MeshStandardMaterial({
+                    color: 0x1e293b,     // 深空暗石墨蓝，沉稳厚重
+                    roughness: 0.38,
+                    metalness: 0.20
+                }),
+                cap: new THREE.MeshStandardMaterial({
+                    color: 0xf1f5f9,      // 阳极氧化银白航空合金
+                    roughness: 0.18,
+                    metalness: 0.85
+                }),
+                bumper: new THREE.MeshStandardMaterial({
+                    color: 0x090d16,   // 弹性高阻尼防撞胶条
+                    roughness: 0.82,
+                    metalness: 0.05
+                }),
+                led: new THREE.MeshStandardMaterial({
+                    color: 0x38bdf8,      // 欧冠冷光青色
+                    emissive: 0x0284c7,
+                    emissiveIntensity: 1.15,
+                    roughness: 0.2
+                }),
+                base: new THREE.MeshStandardMaterial({
+                    color: 0x0f172a,     // 暗色地基铁素钢
+                    roughness: 0.55,
+                    metalness: 0.35
+                }),
+                chrome: new THREE.MeshStandardMaterial({
+                    color: 0xf8fafc,    // 镜面抛光镀铬
+                    roughness: 0.12,
+                    metalness: 0.95
+                })
+            };
+
+            const r = 0.35;
+            const hw = G.halfW;
+            const goalW = 6.8;
+
+            // 1. 顶部球门两侧挡板
+            addDasherWall(-hw + 1.2, G.topZ, -goalW / 2, G.topZ, r, mats);
+            addDasherWall(goalW / 2, G.topZ, hw - 1.2, G.topZ, r, mats);
+
+            // 2. 顶部左右高精度圆角挡板
+            addCornerDasherArc(-hw + 1.2, G.topZ + 1.2, 1.2, Math.PI * 1.5, Math.PI, r, mats);
+            addCornerDasherArc(hw - 1.2, G.topZ + 1.2, 1.2, Math.PI * 1.5, Math.PI * 2.0, r, mats);
+
+            // 3. 两侧主直道防护墙
+            addDasherWall(-hw, G.topZ + 1.2, -hw, G.funnelTopZ, r, mats);
+            addDasherWall(hw, G.topZ + 1.2, hw, G.funnelTopZ, r, mats);
+
+            // 4. 底部导球斜挡板
+            addDasherWall(-hw, G.funnelTopZ, -G.pivotX, G.pivotZ, r, mats);
+            addDasherWall(hw, G.funnelTopZ, G.pivotX, G.pivotZ, r, mats);
+
+            // 5. 底部左右电竞级缓冲端墩 (取代原简易灰圆柱)
+            createTurretBumper(-G.pivotX, G.pivotZ, mats);
+            createTurretBumper(G.pivotX, G.pivotZ, mats);
+
+            // 6. 顶部左右专业 3D 角旗 (FIFA Red & Gold Checkered Flags) - 精准定位在球场两角顶点
+            createCornerFlag(-hw + 0.28, G.topZ + 0.28, 0.55);
+            createCornerFlag(hw - 0.28, G.topZ + 0.28, Math.PI - 0.55);
         }
 
         /* ==========================================================================
@@ -1729,7 +1945,7 @@
                 trophyLight.position.set(0, 2.5, 0.4);
                 trophyGroup.add(trophyLight);
 
-                trophyGroup.position.set(6.2, 0, G.topZ - 0.9);
+                trophyGroup.position.set(8.6, 0.3, G.topZ - 1.2);
                 scene.add(trophyGroup);
             }
 
@@ -3151,7 +3367,15 @@
             updateParticles(dt);
             updateSmokeSystem(dt);
             updateStadiumAtmosphere(dt);
-            updateStadiumCrowd(dt, clock.getElapsedTime());
+            const elapsedTime = clock.getElapsedTime();
+            updateStadiumCrowd(dt, elapsedTime);
+
+            // 3D 角旗随场馆微风自然飘扬 (Dynamic Stadium Breeze)
+            for (let i = 0; i < cornerFlags.length; i++) {
+                const cf = cornerFlags[i];
+                cf.clothGrp.rotation.y = cf.baseAngle + Math.sin(elapsedTime * 3.4 + cf.phase) * 0.20;
+                cf.clothGrp.rotation.z = Math.sin(elapsedTime * 2.6 + cf.phase) * 0.05;
+            }
 
             if (screenShake > 0.01) {
                 camera.position.x = baseCamPos.x + (Math.random() - 0.5) * screenShake * 0.8;
