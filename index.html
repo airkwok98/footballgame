@@ -2460,36 +2460,36 @@
            9. 电脑防守球员阵容 (橙色门将 + 蓝色 10 号、7 号，绝不自摆乌龙)
            ========================================================================== */
         function buildPlayers() {
-            // 1. 橙色门将 (守门员守在门线前: G.topZ + 0.8 = -11.7，绝不前突堵门)
+            // 1. 橙色门将 (守门员守在门线前: G.topZ + 0.8 = -11.7，门线全覆盖巡逻: 振幅 2.3米，覆盖全门)
             const keeper = makeHumanoid(0xf97316, 0x1e293b, 0xffffff, 'top_keeper', {
-                baseX: 0, baseZ: G.topZ + 0.8, amplitude: 0.9, speed: 1.2, phase: 0
+                baseX: 0, baseZ: G.topZ + 0.8, amplitude: 2.3, speed: 0.75, phase: 0
             });
             scene.add(keeper.group);
             characters.push(keeper);
 
-            // 2. 蓝色双后卫 (大禁区线: Z = -6.5，左/右半区反相巡逻，形成动态射门穿透空档)
+            // 2. 蓝色双后卫 (大禁区线: Z = -6.5，左/右宽幅联防巡逻: 振幅 3.6米，大范围交叉补位与空档开合)
             const defL = makeHumanoid(0x2563eb, 0xffffff, 0xef4444, 'defender', {
-                baseX: -2.8, baseZ: -6.5, amplitude: 1.5, speed: 1.4, phase: 0
+                baseX: -2.2, baseZ: -6.5, amplitude: 3.6, speed: 0.68, phase: 0
             });
             scene.add(defL.group);
             characters.push(defL);
 
             const defR = makeHumanoid(0x2563eb, 0xffffff, 0xef4444, 'defender', {
-                baseX: 2.8, baseZ: -6.5, amplitude: 1.5, speed: 1.4, phase: Math.PI
+                baseX: 2.2, baseZ: -6.5, amplitude: 3.6, speed: 0.68, phase: Math.PI * 0.85
             });
             scene.add(defR.group);
             characters.push(defR);
 
-            // 3. 蓝色前腰 (中圈上方: Z = -2.5，大范围横向跑动巡逻)
+            // 3. 蓝色前腰 (中圈上方: Z = -2.5，全场大范围穿插调度: 振幅 5.4米，长距离连续奔跑跨越全场)
             const mid = makeHumanoid(0x2563eb, 0xffffff, 0xef4444, 'midfielder', {
-                baseX: 0, baseZ: -2.5, amplitude: 2.8, speed: 1.2, phase: 1.2
+                baseX: 0, baseZ: -2.5, amplitude: 5.4, speed: 0.62, phase: 1.2
             });
             scene.add(mid.group);
             characters.push(mid);
 
-            // 4. 蓝色后腰/滑铲防守球员 (中圈下方: Z = 3.6，近距离防线)
+            // 4. 蓝色后腰/滑铲防守球员 (中圈下方: Z = 3.6，宽幅铁闸扫荡: 振幅 4.8米，大步横向封堵)
             const slider = makeHumanoid(0x2563eb, 0xffffff, 0xef4444, 'slider', {
-                baseX: 0, baseZ: 3.6, amplitude: 2.2, speed: 1.35, phase: 2.6
+                baseX: 0, baseZ: 3.6, amplitude: 4.8, speed: 0.58, phase: 2.6
             });
             scene.add(slider.group);
             characters.push(slider);
@@ -2562,6 +2562,7 @@
                 speed: cfg.speed || 1.2,
                 phase: cfg.phase || 0,
                 time: cfg.phase || 0,
+                runPhase: (cfg.phase || 0) * 3.0,
                 isSliding: false,
                 kickCooldown: 0,
                 actionType: 'none', // 'none' | 'header' | 'kick_right' | 'kick_left'
@@ -2935,19 +2936,21 @@
             const pos = c.group.position;
 
             if (c.role === 'top_keeper') {
-                // 门将：平时在门线中心区域热身微调，绝无磁吸吸附！
-                let targetX = c.amplitude * Math.sin(c.time * 0.8);
+                // 门将：大范围门前微调巡逻 (振幅 2.3m，覆盖球门全宽) 与极速扑救
+                let targetX = c.amplitude * Math.sin(c.time * 0.85);
 
                 // 只有当足球真正朝球门飞来（射门且速度较快、进入上半场）时，门将才激活拦截扑救
                 if (ball.vz < -7.0 && ball.z < 2.0) {
                     const timeToGoal = Math.max(0.05, (c.baseZ - ball.z) / ball.vz);
                     const predictedX = ball.x + ball.vx * timeToGoal;
-                    // 扑救范围限制在球门内 [-2.3, 2.3]
-                    targetX = Math.max(-2.3, Math.min(2.3, predictedX));
+                    // 扑救范围限制在球门内 [-2.6, 2.6]
+                    targetX = Math.max(-2.6, Math.min(2.6, predictedX));
 
                     // 扑救张臂动作
-                    c.lArm.rotation.z = -0.8;
-                    c.rArm.rotation.z = 0.8;
+                    c.lArm.rotation.z = -0.85;
+                    c.rArm.rotation.z = 0.85;
+                    c.lArm.rotation.x = 0;
+                    c.rArm.rotation.x = 0;
                 } else {
                     c.lArm.rotation.z = 0;
                     c.rArm.rotation.z = 0;
@@ -2955,13 +2958,29 @@
                     c.rArm.rotation.x = -Math.sin(c.time * 2.0) * 0.3 - 0.2;
                 }
 
-                pos.x += (targetX - pos.x) * Math.min(1.0, dt * 5.0);
+                const prevX = pos.x;
+                pos.x += (targetX - pos.x) * Math.min(1.0, dt * 5.5);
+                const kvx = (pos.x - prevX) / Math.max(0.0001, dt);
+                c.runPhase = (c.runPhase || 0) + Math.abs(kvx) * dt * 4.2;
+
+                // 门将横向滑步碎步动画
+                c.lLeg.rotation.x = Math.sin(c.runPhase) * 0.45;
+                c.rLeg.rotation.x = -Math.sin(c.runPhase) * 0.45;
+                pos.y = Math.abs(Math.sin(c.runPhase)) * 0.05;
             } 
             else {
-                // 场上球员：严格按照桌式足球/弹珠台阵型战术自主巡逻，彻底解除磁吸！
-                // 左右自然开合，给玩家留出可预测、可瞄准的时机空档！
+                // 场上球员：大范围战术穿插巡逻，步长步频严格契合真实位移（告别两三步折返）
+                const prevX = pos.x;
                 pos.x = c.baseX + c.amplitude * Math.sin(c.time);
                 pos.z = c.baseZ;
+
+                const vx = (pos.x - prevX) / Math.max(0.0001, dt);
+                const speedMag = Math.abs(vx);
+
+                // 身体自然微转向跑动侧，高速移动时向行进方向产生拟真身体侧倾
+                const targetRotY = (speedMag > 0.15) ? (Math.sign(vx) * 0.35) : 0;
+                c.group.rotation.y += (targetRotY - c.group.rotation.y) * Math.min(1.0, dt * 6.0);
+                c.torso.rotation.z = -vx * 0.035;
 
                 // 动作状态机检测 (头球跃顶 / 摆腿抽射)
                 if (c.actionTimer > 0) {
@@ -3035,6 +3054,7 @@
                     if (c.actionTimer <= 0) {
                         c.actionType = 'none';
                         pos.y = 0;
+                        c.group.rotation.set(0, 0, 0);
                         c.torso.rotation.set(0, 0, 0);
                         if (c.head) c.head.rotation.set(0, 0, 0);
                         c.lArm.rotation.set(0, 0, 0);
@@ -3043,16 +3063,21 @@
                         c.rLeg.rotation.set(0, 0, 0);
                     }
                 } else {
-                    // 常规巡逻跑步摆动动画
-                    pos.y = 0;
-                    c.torso.rotation.set(0, 0, 0);
-                    if (c.head) c.head.rotation.set(0, 0, 0);
-                    c.lArm.rotation.z = 0;
-                    c.rArm.rotation.z = 0;
-                    c.lLeg.rotation.x = Math.sin(c.time * 2.5) * 0.6;
-                    c.rLeg.rotation.x = -Math.sin(c.time * 2.5) * 0.6;
-                    c.lArm.rotation.x = -Math.sin(c.time * 2.5) * 0.5;
-                    c.rArm.rotation.x = Math.sin(c.time * 2.5) * 0.5;
+                    // 常规巡逻跑步：步态频率严格绑定真实水平位移（步长约 0.75m）
+                    c.runPhase = (c.runPhase || 0) + speedMag * dt * 4.2;
+
+                    // 腿部前后大幅摆动与动感屈膝
+                    c.lLeg.rotation.x = Math.sin(c.runPhase) * 0.65;
+                    c.rLeg.rotation.x = -Math.sin(c.runPhase) * 0.65;
+
+                    // 手臂协调反向对角摆动
+                    c.lArm.rotation.x = -Math.sin(c.runPhase) * 0.55;
+                    c.rArm.rotation.x = Math.sin(c.runPhase) * 0.55;
+                    c.lArm.rotation.z = 0.10;
+                    c.rArm.rotation.z = -0.10;
+
+                    // 奔跑真实重心垂直起伏 (Vertical Bobbing)
+                    pos.y = Math.abs(Math.sin(c.runPhase)) * 0.08;
 
                     // 滑铲球员如果球在附近迎面冲来，触发滑铲动作
                     if (c.role === 'slider') {
@@ -3065,6 +3090,7 @@
                             c.torso.rotation.x = 0.85;
                             c.rLeg.rotation.x = -1.35;
                             c.lLeg.rotation.x = 0.4;
+                            pos.y = 0;
                         }
                     }
                 }
