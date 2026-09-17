@@ -1,0 +1,17 @@
+﻿# Temporary test captures
+test_*.png
+
+# Research & reference raw media
+ref_video.mp4
+ref_audio.aac
+ref_audio.wav
+ref_frames/
+qc/
+
+# Python & OS cache
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

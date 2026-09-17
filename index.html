@@ -1,0 +1,2889 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Soccer Pinball 3D - 纯净原生还原版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0b1322; /* 还原第一版纯净高级的深空夜场 Slate 蓝底色 */
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+            color: #ffffff;
+        }
+        #game-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        
+        /* 顶部紧凑超薄记分牌（移至最顶端，严禁遮挡下方球门） */
+        #scoreboard {
+            position: absolute;
+            top: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            background: rgba(15, 23, 42, 0.92);
+            border: 1.5px solid rgba(255, 255, 255, 0.15);
+            border-radius: 8px;
+            padding: 3px 18px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            z-index: 10;
+            pointer-events: none;
+        }
+        .team-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-width: 42px;
+        }
+        .team-name {
+            font-size: 9px;
+            font-weight: 800;
+            color: #94a3b8;
+            letter-spacing: 1px;
+        }
+        .team-score {
+            font-size: 20px;
+            font-weight: 900;
+            color: #ffffff;
+            font-family: "SF Mono", "Courier New", Courier, monospace;
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+            line-height: 1.1;
+        }
+        .score-divider {
+            font-size: 15px;
+            font-weight: bold;
+            color: #475569;
+            margin: 0 10px;
+        }
+
+        /* 连击 Combo 移至左上角，彻底移出球门中心视线 */
+        #combo-badge {
+            position: absolute;
+            top: 10px;
+            left: 14px;
+            background: linear-gradient(90deg, #f59e0b, #ef4444);
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 900;
+            padding: 4px 10px;
+            border-radius: 999px;
+            letter-spacing: 0.5px;
+            box-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 15;
+            transform: scale(0.8);
+        }
+        #combo-badge.show {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* 暴击提示（靠右显示，不挡门） */
+        #crit-banner {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.6);
+            font-size: 28px;
+            font-weight: 900;
+            font-style: italic;
+            color: #38bdf8;
+            text-shadow: 0 0 25px rgba(56, 189, 248, 0.9);
+            letter-spacing: 2px;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+            z-index: 25;
+        }
+        #crit-banner.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1.1);
+        }
+
+        /* 进球与失误横幅 */
+        #goal-banner {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.5);
+            font-size: 48px;
+            font-weight: 900;
+            font-style: italic;
+            color: #facc15;
+            text-shadow: 0 0 35px rgba(250, 204, 21, 0.9), 0 4px 10px rgba(0,0,0,0.9);
+            letter-spacing: 3px;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 30;
+        }
+        #goal-banner.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1.15);
+        }
+
+        #drain-banner {
+            position: absolute;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.5);
+            font-size: 32px;
+            font-weight: 900;
+            color: #ef4444;
+            text-shadow: 0 0 30px rgba(239, 68, 68, 0.9);
+            letter-spacing: 1px;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 30;
+        }
+        #drain-banner.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1.05);
+        }
+
+        /* 草坪切换优雅毛玻璃浮动 Toast */
+        #pitch-toast {
+            position: absolute;
+            top: 48px;
+            left: 50%;
+            transform: translateX(-50%) translateY(-8px) scale(0.9);
+            background: rgba(15, 23, 42, 0.94);
+            border: 1px solid rgba(56, 189, 248, 0.4);
+            color: #38bdf8;
+            font-size: 13px;
+            font-weight: 800;
+            padding: 5px 18px;
+            border-radius: 999px;
+            letter-spacing: 0.8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7), 0 0 15px rgba(56, 189, 248, 0.25);
+            backdrop-filter: blur(12px);
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+            z-index: 45;
+            white-space: nowrap;
+        }
+        #pitch-toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0) scale(1);
+        }
+
+        /* 右上角极简工具按钮 */
+        #mini-tools {
+            position: absolute;
+            top: 8px;
+            right: 12px;
+            display: flex;
+            gap: 6px;
+            z-index: 20;
+        }
+        .tool-btn {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #e2e8f0;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            cursor: pointer;
+            backdrop-filter: blur(6px);
+            transition: all 0.2s ease;
+        }
+        .tool-btn:hover {
+            background: rgba(59, 130, 246, 0.9);
+            transform: scale(1.1);
+        }
+
+        /* 全屏透明触控 */
+        #touch-left, #touch-right {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 50%;
+            z-index: 5;
+            -webkit-tap-highlight-color: transparent;
+        }
+        #touch-left { left: 0; }
+        #touch-right { right: 0; }
+
+        /* 弹窗样式 */
+        .modal-backdrop {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .modal-backdrop.active { opacity: 1; pointer-events: auto; }
+        .modal-card {
+            background: #0f172a;
+            border: 2px solid #3b82f6;
+            border-radius: 16px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 90%;
+            max-height: 90%;
+        }
+        .modal-card img {
+            border-radius: 10px;
+            max-width: 100%;
+            max-height: 70vh;
+            object-fit: contain;
+        }
+        .modal-title { color: #f8fafc; font-size: 15px; font-weight: 800; margin-bottom: 10px; }
+        .modal-btn {
+            margin-top: 12px; background: #2563eb; color: white; border: none;
+            padding: 8px 24px; border-radius: 999px; font-weight: 700; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <!-- 紧凑不遮挡记分牌 -->
+        <div id="scoreboard">
+            <div class="team-box">
+                <span class="team-name">P1 玩家</span>
+                <span class="team-score" id="score-p1">2</span>
+            </div>
+            <div class="score-divider">:</div>
+            <div class="team-box">
+                <span class="team-name">CPU 电脑</span>
+                <span class="team-score" id="score-cpu">0</span>
+            </div>
+        </div>
+
+        <!-- 连击提示 (移到左上角) -->
+        <div id="combo-badge">🔥 COMBO x2</div>
+        <div id="crit-banner">ROCKET SHOT! 🚀💥</div>
+        <div id="goal-banner">GOOOAL! ⚽🎉</div>
+        <div id="drain-banner">DRAINED! 💔 漏球丢分</div>
+        <div id="pitch-toast">🌿 经典斑马横条纹</div>
+
+        <!-- 工具栏 -->
+        <div id="mini-tools">
+            <button class="tool-btn" id="btn-sound" title="音效">🔊</button>
+            <button class="tool-btn" id="btn-pitch" title="切换草坪 (🌿/🏁/💎)">🌿</button>
+            <button class="tool-btn" id="btn-skin" title="换球皮">⚽</button>
+            <button class="tool-btn" id="btn-cover" title="海报">🖼️</button>
+            <button class="tool-btn" id="btn-share" title="战报">🏆</button>
+            <button class="tool-btn" id="btn-reset" title="开球">🔄</button>
+        </div>
+
+        <div id="touch-left"></div>
+        <div id="touch-right"></div>
+
+        <div class="modal-backdrop" id="modal-cover">
+            <div class="modal-card">
+                <div class="modal-title">📱 微信小游戏启动海报</div>
+                <img src="assets/ui/game_cover.jpg" alt="海报">
+                <button class="modal-btn" onclick="closeModals()">开始决战 ⚽</button>
+            </div>
+        </div>
+
+        <div class="modal-backdrop" id="modal-share">
+            <div class="modal-card">
+                <div class="modal-title">🏆 微信小游戏战报卡片</div>
+                <img src="assets/ui/share_card.jpg" alt="战报">
+                <button class="modal-btn" onclick="closeModals()">重返球场</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 离线 3D 渲染核心 -->
+    <script src="libs/three.min.js"></script>
+
+    <script>
+        /* ==========================================================================
+           1. 音效引擎
+           ========================================================================== */
+        const Sound = {
+            enabled: true,
+            audioCtx: null,
+            buffers: {},
+            comboNotes: [261.6, 293.7, 329.6, 392.0, 440.0, 523.3, 587.3, 659.3],
+            init() {
+                if (!this.audioCtx) {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    if (AudioContext) {
+                        this.audioCtx = new AudioContext();
+                    }
+                }
+                if (this.audioCtx && this.audioCtx.state === 'suspended') {
+                    this.audioCtx.resume();
+                }
+                this.load('flipper', 'assets/audio/flipper.wav');
+                this.load('kick', 'assets/audio/kick.wav');
+                this.load('kick_crit', 'assets/audio/kick_crit.wav');
+                this.load('bounce', 'assets/audio/bounce.wav');
+                this.load('whistle', 'assets/audio/whistle.wav');
+                this.load('goal', 'assets/audio/goal.wav');
+                this.load('drain', 'assets/audio/drain.wav');
+                this.load('net_impact', 'assets/audio/net_impact.wav');
+            },
+            load(key, url) {
+                if (this.buffers[key] || !this.audioCtx) return;
+                fetch(url)
+                    .then(r => r.arrayBuffer())
+                    .then(buf => this.audioCtx.decodeAudioData(buf))
+                    .then(decoded => { this.buffers[key] = decoded; })
+                    .catch(() => {});
+            },
+            play(key, vol = 1.0, pitchRate = 1.0) {
+                if (!this.enabled) return;
+                this.init();
+                if (!this.audioCtx) return;
+                if (this.buffers[key]) {
+                    const src = this.audioCtx.createBufferSource();
+                    src.buffer = this.buffers[key];
+                    src.playbackRate.value = pitchRate;
+                    const gain = this.audioCtx.createGain();
+                    gain.gain.value = vol;
+                    src.connect(gain);
+                    gain.connect(this.audioCtx.destination);
+                    src.start(0);
+                } else {
+                    this.playSynth(key, vol, pitchRate);
+                }
+            },
+            playComboNote(comboCount) {
+                if (!this.enabled) return;
+                this.init();
+                if (!this.audioCtx) return;
+                const now = this.audioCtx.currentTime;
+                const noteIdx = Math.min(comboCount, this.comboNotes.length - 1);
+                const freq = this.comboNotes[noteIdx];
+
+                const osc = this.audioCtx.createOscillator();
+                const gain = this.audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, now);
+                osc.frequency.exponentialRampToValueAtTime(freq * 1.35, now + 0.12);
+                gain.gain.setValueAtTime(0.25, now);
+                gain.gain.exponentialRampToValueAtTime(0.005, now + 0.12);
+                osc.connect(gain);
+                gain.connect(this.audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.12);
+            },
+            playSynth(key, vol, pitchRate) {
+                if (!this.audioCtx) return;
+                const now = this.audioCtx.currentTime;
+                const osc = this.audioCtx.createOscillator();
+                const gain = this.audioCtx.createGain();
+                if (key === 'flipper') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(420 * pitchRate, now);
+                    osc.frequency.exponentialRampToValueAtTime(60, now + 0.07);
+                    gain.gain.setValueAtTime(0.4 * vol, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.07);
+                } else if (key === 'kick_crit') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(110 * pitchRate, now);
+                    osc.frequency.exponentialRampToValueAtTime(32, now + 0.28);
+                    gain.gain.setValueAtTime(0.7 * vol, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.28);
+                } else if (key === 'whistle') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(2850 * pitchRate, now);
+                    osc.frequency.exponentialRampToValueAtTime(2980 * pitchRate, now + 0.2);
+                    gain.gain.setValueAtTime(0.3 * vol, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.25);
+                } else if (key === 'goal') {
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(330 * pitchRate, now);
+                    osc.frequency.exponentialRampToValueAtTime(523, now + 0.4);
+                    gain.gain.setValueAtTime(0.35 * vol, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+                } else if (key === 'drain') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(260 * pitchRate, now);
+                    osc.frequency.exponentialRampToValueAtTime(80, now + 0.35);
+                    gain.gain.setValueAtTime(0.4 * vol, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+                } else if (key === 'bounce') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(320 * pitchRate, now);
+                    osc.frequency.exponentialRampToValueAtTime(120, now + 0.08);
+                    gain.gain.setValueAtTime(0.3 * vol, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.08);
+                } else if (key === 'net_impact') {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(90 * pitchRate, now);
+                    osc.frequency.exponentialRampToValueAtTime(34, now + 0.35);
+                    gain.gain.setValueAtTime(0.75 * vol, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.38);
+                } else {
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(160 * pitchRate, now);
+                    osc.frequency.exponentialRampToValueAtTime(45, now + 0.12);
+                    gain.gain.setValueAtTime(0.45 * vol, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
+                }
+                osc.connect(gain);
+                gain.connect(this.audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.35);
+            }
+        };
+
+        /* ==========================================================================
+           2. 核心几何与防遮挡构图（全场整体下移，球门 100% 露出一目了然！）
+           ========================================================================== */
+        const G = {
+            halfW: 7.6,
+            topZ: -12.5,        // 球门整体微下移，彻底摆脱顶部文字遮挡！
+            funnelTopZ: 9.5,
+            pivotZ: 14.5,
+            pivotX: 4.1,        // 拉大危险孔径，确保真实漏球失败判定
+            flipperL: 3.2,
+            restAngle: 0.38,
+            activeAngle: -0.65,
+            strikeSpeed: 48,
+            ballR: 0.52,
+            tableTiltGravityZ: 5.2
+        };
+
+        let scene, camera, renderer;
+        let ball = {
+            mesh: null,
+            x: 0, y: G.ballR, z: 2,
+            vx: 0, vy: 0, vz: 14,
+            speed: 0
+        };
+
+        let leftFlipper = {
+            px: -G.pivotX, pz: G.pivotZ,
+            angle: G.restAngle, targetAngle: G.restAngle,
+            omega: 0, mesh: null
+        };
+        let rightFlipper = {
+            px: G.pivotX, pz: G.pivotZ,
+            angle: -G.restAngle, targetAngle: -G.restAngle,
+            omega: 0, mesh: null
+        };
+
+        const walls = [];
+        let keyState = { left: false, right: false };
+        let scoreP1 = 2, scoreCPU = 0;
+        let countdown = 54;
+        let countdownMesh;
+        let pitchMesh = null;
+        let pitchLineMat = null;
+        const PITCH_STYLES = [
+            { id: 'zebra', name: '经典斑马横条纹', icon: '🌿' },
+            { id: 'checker', name: '英超棋盘方格', icon: '🏁' },
+            { id: 'diamond', name: '大师菱性格纹', icon: '💎' }
+        ];
+        let currentPitchStyleIdx = 0;
+        let pitchToastTimer = null;
+
+        let characters = [];
+        let particles = [];
+        let ballTrailParticles = [];
+        let textures = {};
+        let currentSkin = 'classic';
+
+        let comboCount = 0;
+        let comboResetTimer = 0;
+        let screenShake = 0;
+        let bulletTimeTimer = 0;
+        let goalCelebrationTimer = 0;
+        let baseCamPos = new THREE.Vector3(0, 52, 11.5);
+
+        // 宏伟球场全景氛围全局引用 (源自前期高精插画：看台天幕/环场LED/金杯展台/礼花系统)
+        let ledTexLeft = null, ledTexRight = null;
+        let stadiumTrophyMesh = null;
+        const stadiumConfettiPool = [];
+        const stadiumSpectators = [];
+        const stadiumFlags = [];
+
+        /* ==========================================================================
+           真实球网质点弹簧软体物理引擎 (Verlet Soft-Body Goal Net Simulation)
+           ========================================================================== */
+        const goalState = {
+            active: false,
+            timer: 0,
+            netSoundPlayed: false
+        };
+
+        const topGoalNet = {
+            mesh: null,
+            particles: [],
+            springs: [],
+            nx: 16,
+            ny: 8,
+            w: 6.8,
+            h: 2.74,
+            centerY: 1.43,
+            centerZ: G.topZ - 2.2, // -14.7
+            init(mesh) {
+                this.mesh = mesh;
+                this.particles = [];
+                this.springs = [];
+                for (let j = 0; j <= this.ny; j++) {
+                    for (let i = 0; i <= this.nx; i++) {
+                        const lx = -this.w / 2 + (i / this.nx) * this.w;
+                        const ly = this.h / 2 - (j / this.ny) * this.h;
+                        const wx = lx;
+                        const wy = this.centerY + ly;
+                        const wz = this.centerZ;
+                        const isPinned = (i === 0 || i === this.nx || j === 0 || j === this.ny);
+                        this.particles.push({
+                            curr: new THREE.Vector3(wx, wy, wz),
+                            prev: new THREE.Vector3(wx, wy, wz),
+                            rest: new THREE.Vector3(wx, wy, wz),
+                            isPinned: isPinned
+                        });
+                    }
+                }
+                for (let j = 0; j <= this.ny; j++) {
+                    for (let i = 0; i <= this.nx; i++) {
+                        const idx = j * (this.nx + 1) + i;
+                        if (i < this.nx) {
+                            const rightIdx = j * (this.nx + 1) + (i + 1);
+                            const d = this.particles[idx].rest.distanceTo(this.particles[rightIdx].rest);
+                            this.springs.push({ a: idx, b: rightIdx, restLen: d, stiffness: 0.88 });
+                        }
+                        if (j < this.ny) {
+                            const downIdx = (j + 1) * (this.nx + 1) + i;
+                            const d = this.particles[idx].rest.distanceTo(this.particles[downIdx].rest);
+                            this.springs.push({ a: idx, b: downIdx, restLen: d, stiffness: 0.88 });
+                        }
+                        if (i < this.nx && j < this.ny) {
+                            const d1 = (j + 1) * (this.nx + 1) + (i + 1);
+                            const d = this.particles[idx].rest.distanceTo(this.particles[d1].rest);
+                            this.springs.push({ a: idx, b: d1, restLen: d, stiffness: 0.45 });
+                        }
+                        if (i > 0 && j < this.ny) {
+                            const d2 = (j + 1) * (this.nx + 1) + (i - 1);
+                            const d = this.particles[idx].rest.distanceTo(this.particles[d2].rest);
+                            this.springs.push({ a: idx, b: d2, restLen: d, stiffness: 0.45 });
+                        }
+                    }
+                }
+            },
+            update(dt, ballObj) {
+                if (!this.mesh) return 0;
+                const damping = 0.042;
+                const restoreK = 135.0;
+                
+                // 1. Verlet Integration (质点动力学积分)
+                for (let k = 0; k < this.particles.length; k++) {
+                    const p = this.particles[k];
+                    if (p.isPinned) continue;
+                    const vx = (p.curr.x - p.prev.x) * (1 - damping);
+                    const vy = (p.curr.y - p.prev.y) * (1 - damping);
+                    const vz = (p.curr.z - p.prev.z) * (1 - damping);
+
+                    const ax = -restoreK * (p.curr.x - p.rest.x);
+                    const ay = -restoreK * (p.curr.y - p.rest.y) - 1.0;
+                    const az = -restoreK * (p.curr.z - p.rest.z);
+
+                    const nx = p.curr.x + vx + ax * dt * dt;
+                    const ny = p.curr.y + vy + ay * dt * dt;
+                    const nz = p.curr.z + vz + az * dt * dt;
+
+                    p.prev.copy(p.curr);
+                    p.curr.set(nx, ny, nz);
+                }
+
+                // 2. Distance Constraints (3 轮弹簧张力松弛，传递同心圆波浪)
+                for (let iter = 0; iter < 3; iter++) {
+                    for (let s = 0; s < this.springs.length; s++) {
+                        const sp = this.springs[s];
+                        const pA = this.particles[sp.a];
+                        const pB = this.particles[sp.b];
+                        const dx = pB.curr.x - pA.curr.x;
+                        const dy = pB.curr.y - pA.curr.y;
+                        const dz = pB.curr.z - pA.curr.z;
+                        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
+                        const diff = (dist - sp.restLen) / dist * 0.5 * sp.stiffness;
+                        if (!pA.isPinned) {
+                            pA.curr.x += dx * diff;
+                            pA.curr.y += dy * diff;
+                            pA.curr.z += dz * diff;
+                        }
+                        if (!pB.isPinned) {
+                            pB.curr.x -= dx * diff;
+                            pB.curr.y -= dy * diff;
+                            pB.curr.z -= dz * diff;
+                        }
+                    }
+                }
+
+                // 3. Collision with Ball (足球撞网深陷凹陷与反作用力)
+                let hits = 0;
+                const collR = G.ballR + 0.14;
+                for (let k = 0; k < this.particles.length; k++) {
+                    const p = this.particles[k];
+                    const dx = p.curr.x - ballObj.x;
+                    const dy = p.curr.y - ballObj.y;
+                    const dz = p.curr.z - ballObj.z;
+                    const distSq = dx * dx + dy * dy + dz * dz;
+                    if (distSq < collR * collR) {
+                        const dist = Math.sqrt(distSq) || 1e-6;
+                        const overlap = collR - dist;
+                        const nx = dx / dist;
+                        const ny = dy / dist;
+                        const nz = dz / dist;
+
+                        if (!p.isPinned) {
+                            p.curr.x += nx * overlap * 0.95;
+                            p.curr.y += ny * overlap * 0.95;
+                            p.curr.z += nz * overlap * 0.95;
+                        }
+
+                        // 足球动能耗散与网绳反弹
+                        ballObj.vx -= nx * overlap * 30.0 * dt;
+                        ballObj.vy -= ny * overlap * 30.0 * dt;
+                        ballObj.vz -= nz * overlap * 30.0 * dt;
+
+                        ballObj.vx *= (1 - 10.0 * dt);
+                        ballObj.vy *= (1 - 10.0 * dt);
+                        ballObj.vz *= (1 - 24.0 * dt);
+
+                        hits++;
+                    }
+                }
+
+                // 4. 直接原地更新 GPU 顶点缓冲区 (0 GC)
+                const posAttr = this.mesh.geometry.attributes.position;
+                const arr = posAttr.array;
+                for (let k = 0; k < this.particles.length; k++) {
+                    arr[k * 3 + 0] = this.particles[k].curr.x;
+                    arr[k * 3 + 1] = this.particles[k].curr.y - this.centerY;
+                    arr[k * 3 + 2] = this.particles[k].curr.z - this.centerZ;
+                }
+                posAttr.needsUpdate = true;
+                this.mesh.geometry.computeVertexNormals();
+
+                return hits;
+            },
+            reset() {
+                if (!this.mesh) return;
+                for (let k = 0; k < this.particles.length; k++) {
+                    this.particles[k].curr.copy(this.particles[k].rest);
+                    this.particles[k].prev.copy(this.particles[k].rest);
+                }
+                const posAttr = this.mesh.geometry.attributes.position;
+                const arr = posAttr.array;
+                for (let k = 0; k < this.particles.length; k++) {
+                    arr[k * 3 + 0] = this.particles[k].curr.x;
+                    arr[k * 3 + 1] = this.particles[k].curr.y - this.centerY;
+                    arr[k * 3 + 2] = this.particles[k].curr.z - this.centerZ;
+                }
+                posAttr.needsUpdate = true;
+                this.mesh.geometry.computeVertexNormals();
+            }
+        };
+
+        /* ==========================================================================
+           空气拖尾与击球烟雾粒子系统 (Aerodynamic Vapor & Smoke Particle System)
+           ========================================================================== */
+        let ballSlipstreamTimer = 0;
+        let ballSlipstreamCrit = false;
+        let lastTrailX = 0, lastTrailZ = 0;
+        let trailVortexSide = 1;
+
+        let smokeTexture = null;
+        function getSmokeTexture() {
+            if (smokeTexture) return smokeTexture;
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+            grad.addColorStop(0.00, 'rgba(255, 255, 255, 1.00)');
+            grad.addColorStop(0.25, 'rgba(242, 248, 255, 0.82)');
+            grad.addColorStop(0.55, 'rgba(220, 240, 255, 0.42)');
+            grad.addColorStop(0.80, 'rgba(205, 230, 255, 0.12)');
+            grad.addColorStop(1.00, 'rgba(255, 255, 255, 0.00)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(64, 64, 64, 0, Math.PI * 2);
+            ctx.fill();
+            smokeTexture = new THREE.CanvasTexture(canvas);
+            return smokeTexture;
+        }
+
+        let goalNetTexture = null;
+        function createGoalNetTexture() {
+            if (goalNetTexture) return goalNetTexture;
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, 512, 512);
+
+            const step = 64; // 8x8 格，标准 FIFA 网眼比例
+            // 1. 细微外发光光晕 (模拟尼龙纤维在夜场探照灯下的边缘泛光)
+            ctx.lineWidth = 10.0;
+            ctx.strokeStyle = 'rgba(215, 235, 255, 0.45)';
+            for (let x = 0; x <= 512; x += step) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, 512);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= 512; y += step) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(512, y);
+                ctx.stroke();
+            }
+
+            // 2. 纯白实心编织尼龙绳芯 (饱满高光白色绳缆)
+            ctx.lineWidth = 6.2;
+            ctx.strokeStyle = '#ffffff';
+            for (let x = 0; x <= 512; x += step) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, 512);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= 512; y += step) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(512, y);
+                ctx.stroke();
+            }
+
+            // 3. 绳网打结网眼节点 (立体饱满圆球形网结)
+            ctx.fillStyle = '#ffffff';
+            for (let x = 0; x <= 512; x += step) {
+                for (let y = 0; y <= 512; y += step) {
+                    ctx.beginPath();
+                    ctx.arc(x, y, 7.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            goalNetTexture = new THREE.CanvasTexture(canvas);
+            goalNetTexture.wrapS = THREE.RepeatWrapping;
+            goalNetTexture.wrapT = THREE.RepeatWrapping;
+            goalNetTexture.anisotropy = 8;
+            return goalNetTexture;
+        }
+
+        const SMOKE_POOL_SIZE = 80;
+        const smokePool = [];
+        let smokeGeo = null;
+
+        function initSmokeSystem() {
+            smokeGeo = new THREE.PlaneGeometry(1, 1);
+            const tex = getSmokeTexture();
+            for (let i = 0; i < SMOKE_POOL_SIZE; i++) {
+                const mat = new THREE.MeshBasicMaterial({
+                    map: tex,
+                    transparent: true,
+                    opacity: 0,
+                    depthWrite: false,
+                    blending: THREE.NormalBlending
+                });
+                const mesh = new THREE.Mesh(smokeGeo, mat);
+                mesh.visible = false;
+                scene.add(mesh);
+                smokePool.push({
+                    mesh,
+                    mat,
+                    active: false,
+                    life: 0,
+                    maxLife: 1,
+                    initScale: 0.5,
+                    targetScale: 1.8,
+                    baseOpacity: 0.75,
+                    vx: 0, vy: 0, vz: 0
+                });
+            }
+        }
+
+        function spawnSmokePuff(x, y, z, vx, vy, vz, initScale, targetScale, baseOpacity, maxLife, hexColor = 0xffffff) {
+            let p = smokePool.find(item => !item.active);
+            if (!p) return; // 达到上限安全跳过，绝对零GC卡顿
+
+            p.active = true;
+            p.mesh.visible = true;
+            p.mesh.position.set(x, y, z);
+            p.mesh.scale.setScalar(initScale);
+            p.mat.color.setHex(hexColor);
+            p.mat.opacity = baseOpacity;
+            p.initScale = initScale;
+            p.targetScale = targetScale;
+            p.baseOpacity = baseOpacity;
+            p.life = maxLife;
+            p.maxLife = maxLife;
+            p.vx = vx;
+            p.vy = vy;
+            p.vz = vz;
+        }
+
+        function spawnImpactSmokeBurst(x, z, nx, nz, isCrit) {
+            const count = isCrit ? 14 : 9;
+            const col = isCrit ? 0xfef08a : 0xf1f8ff;
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const spd = 2.5 + Math.random() * 6.0;
+                const svx = Math.cos(angle) * spd + nx * 4.0;
+                const svz = Math.sin(angle) * spd + nz * 4.0;
+                const svy = 0.8 + Math.random() * 2.0;
+                spawnSmokePuff(
+                    x + (Math.random() - 0.5) * 0.4,
+                    0.52,
+                    z + (Math.random() - 0.5) * 0.4,
+                    svx, svy, svz,
+                    0.55 + Math.random() * 0.25,
+                    1.75 + Math.random() * 0.50,
+                    isCrit ? 0.85 : 0.72,
+                    0.45 + Math.random() * 0.18,
+                    col
+                );
+            }
+        }
+
+        function updateSmokeSystem(dt) {
+            for (let i = 0; i < smokePool.length; i++) {
+                const p = smokePool[i];
+                if (!p.active) continue;
+
+                p.life -= dt;
+                if (p.life <= 0) {
+                    p.active = false;
+                    p.mesh.visible = false;
+                    continue;
+                }
+
+                const progress = 1.0 - (p.life / p.maxLife); // 0 -> 1
+                p.mesh.quaternion.copy(camera.quaternion);
+
+                p.mesh.position.x += p.vx * dt;
+                p.mesh.position.y += p.vy * dt;
+                p.mesh.position.z += p.vz * dt;
+                p.vx *= 0.92;
+                p.vz *= 0.92;
+                p.vy *= 0.94;
+
+                const scale = p.initScale + (p.targetScale - p.initScale) * Math.sin(progress * Math.PI * 0.5);
+                p.mesh.scale.setScalar(scale);
+
+                const fade = Math.pow(1.0 - progress, 1.15);
+                p.mat.opacity = p.baseOpacity * fade;
+            }
+        }
+
+        /* ==========================================================================
+           3. 场景初始化与相机自适应布局
+           ========================================================================== */
+        window.addEventListener('DOMContentLoaded', () => {
+            const pitchParam = new URLSearchParams(window.location.search).get('pitch');
+            if (pitchParam) {
+                const foundIdx = PITCH_STYLES.findIndex(s => s.id === pitchParam);
+                if (foundIdx !== -1) currentPitchStyleIdx = foundIdx;
+            }
+            initThree();
+            loadAllAssets(() => {
+                initSmokeSystem();     // 初始化零GC空气烟雾粒子池
+                buildCleanPitch();     // 还原第一版纯净高级的纯正绿茵球台！
+                buildSmoothRails();    // 洁白圆润导轨
+                buildStadiumAtmosphere(); // 注入宏伟欧冠球场全景氛围 (天幕看台/环场LED/金杯展台/射灯)
+                initStadiumConfetti(); // 初始化零GC漫天纸花庆典粒子池
+                buildFlippers();
+                buildBall();
+                buildGoals();          // 球门与看台完全露出，无遮挡！
+                buildPlayers();        // 阵营绝不乌龙
+                setupControls();
+
+                const testParam = new URLSearchParams(window.location.search).get('test');
+                if (testParam === 'net_hit') {
+                    setTimeout(() => {
+                        ball.x = 0.35;
+                        ball.y = 1.25;
+                        ball.z = G.topZ - 1.2; // -13.7
+                        ball.vx = 0.4;
+                        ball.vy = 0.2;
+                        ball.vz = -16.0;
+                        goalState.active = true;
+                        goalState.timer = 1.65;
+                        goalCelebrationTimer = 1.65;
+                        Sound.play('goal', 1.0);
+                        const b = document.getElementById('goal-banner');
+                        b.classList.add('show');
+                        spawnSparks(0, 1.5, G.topZ, 0xfacc15);
+                        triggerConfettiShower();
+                    }, 200);
+                }
+
+                setInterval(() => {
+                    if (countdown > 0) countdown--;
+                    else countdown = 60;
+                    updateCountdownTexture();
+                }, 1000);
+
+                animate();
+            });
+        });
+
+        function initThree() {
+            const container = document.getElementById('game-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0b1322); // 第一版高级深邃纯净 Slate 蓝
+
+            // 精准计算的黄金俯角：FOV 46度保证顶部球门与底部底网同时拥有充足留白，彻底告别遮挡
+            camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 500);
+            updateCameraPosition();
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance", preserveDrawingBuffer: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
+            container.appendChild(renderer.domElement);
+
+            const amb = new THREE.AmbientLight(0xffffff, 0.55);
+            scene.add(amb);
+
+            // 主探照灯：照射草叶切面形成真实 3D 微观阴影与高光
+            const sun = new THREE.DirectionalLight(0xfffaed, 1.45);
+            sun.position.set(10, 42, 14);
+            sun.castShadow = true;
+            sun.shadow.mapSize.width = 2048;
+            sun.shadow.mapSize.height = 2048;
+            sun.shadow.camera.near = 10;
+            sun.shadow.camera.far = 80;
+            sun.shadow.camera.left = -16;
+            sun.shadow.camera.right = 16;
+            sun.shadow.camera.top = 28;
+            sun.shadow.camera.bottom = -28;
+            sun.shadow.bias = -0.0006;
+            scene.add(sun);
+
+            // 副球场冷白探照灯：营造夜场世界杯立体轮廓反光
+            const flood = new THREE.DirectionalLight(0x93c5fd, 0.42);
+            flood.position.set(-14, 32, -18);
+            scene.add(flood);
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                updateCameraPosition();
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function updateCameraPosition() {
+            const aspect = window.innerWidth / window.innerHeight;
+            if (aspect < 0.6) {
+                // 竖屏手机：高度 54，Z轴 14.5，视点对准 0，确保球门两端皆有宽敞空间
+                baseCamPos.set(0, 54, 14.5);
+                camera.position.copy(baseCamPos);
+                camera.lookAt(0, 0, 0.0);
+            } else {
+                baseCamPos.set(0, 46, 11.0);
+                camera.position.copy(baseCamPos);
+                camera.lookAt(0, 0, 0.0);
+            }
+        }
+
+        function loadAllAssets(done) {
+            const loader = new THREE.TextureLoader();
+            const list = [
+                // 1. 经典斑马横条纹 PBR 组
+                { k: 'pitch_zebra_diffuse', url: 'assets/pitch/pitch_zebra_diffuse.jpg' },
+                { k: 'pitch_zebra_normal', url: 'assets/pitch/pitch_zebra_normal.jpg' },
+                { k: 'pitch_zebra_roughness', url: 'assets/pitch/pitch_zebra_roughness.jpg' },
+                // 2. 英超棋盘方格 PBR 组
+                { k: 'pitch_checker_diffuse', url: 'assets/pitch/pitch_checker_diffuse.jpg' },
+                { k: 'pitch_checker_normal', url: 'assets/pitch/pitch_checker_normal.jpg' },
+                { k: 'pitch_checker_roughness', url: 'assets/pitch/pitch_checker_roughness.jpg' },
+                // 3. 大师菱性格纹 PBR 组
+                { k: 'pitch_diamond_diffuse', url: 'assets/pitch/pitch_diamond_diffuse.jpg' },
+                { k: 'pitch_diamond_normal', url: 'assets/pitch/pitch_diamond_normal.jpg' },
+                { k: 'pitch_diamond_roughness', url: 'assets/pitch/pitch_diamond_roughness.jpg' },
+                // 通用 AO
+                { k: 'grassAO', url: 'assets/pitch/grass_ao.jpg' },
+                // 足球皮肤
+                { k: 'classic', url: 'assets/balls/ball_classic.jpg' },
+                { k: 'magma', url: 'assets/balls/ball_magma.jpg' },
+                // 宏伟全景球场氛围资产 (从前期精美插画提炼重构)
+                { k: 'stadium_backdrop', url: 'assets/stadium/stadium_backdrop.png' },
+                { k: 'stadium_led', url: 'assets/stadium/stadium_led.png' },
+                { k: 'stadium_trophy', url: 'assets/stadium/stadium_trophy.png' },
+                { k: 'crowd_strip', url: 'assets/stadium/crowd_strip.png' }
+            ];
+            let count = 0;
+            list.forEach(i => {
+                loader.load(i.url, tex => {
+                    textures[i.k] = tex;
+                    if (++count === list.length) done();
+                }, undefined, () => {
+                    if (++count === list.length) done();
+                });
+            });
+        }
+
+        /* ==========================================================================
+           4. 还原第一版纯净、明快、高级的绿茵球场设计 (支持实时无缝切换 3 款大师级草坪)
+           ========================================================================== */
+        function buildCleanPitch() {
+            const pitchW = 16.0, pitchL = 33.0;
+
+            // 1. 配置 2048 级三大草皮纹理各向异性过滤与平铺倍率
+            const maxAniso = renderer ? renderer.capabilities.getMaxAnisotropy() : 4;
+            ['zebra', 'checker', 'diamond'].forEach(s => {
+                ['diffuse', 'normal', 'roughness'].forEach(t => {
+                    const tex = textures[`pitch_${s}_${t}`];
+                    if (tex) {
+                        tex.wrapS = THREE.ClampToEdgeWrapping;
+                        tex.wrapT = THREE.ClampToEdgeWrapping;
+                        tex.repeat.set(1.0, 1.0);
+                        tex.anisotropy = maxAniso;
+                    }
+                });
+            });
+            if (textures.grassAO) {
+                textures.grassAO.wrapS = THREE.ClampToEdgeWrapping;
+                textures.grassAO.wrapT = THREE.ClampToEdgeWrapping;
+                textures.grassAO.repeat.set(1.0, 1.0);
+                textures.grassAO.anisotropy = maxAniso;
+            }
+
+            // 2. 3D 立体草台土壤基底（深色草根泥土倒角，赋予球台真实物理厚度）
+            const baseGeo = new THREE.BoxGeometry(pitchW, 0.22, pitchL);
+            const baseMat = new THREE.MeshStandardMaterial({
+                color: 0x091c0e,
+                roughness: 0.95,
+                metalness: 0.0
+            });
+            const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+            baseMesh.position.set(0, -0.11, 1.0);
+            scene.add(baseMesh);
+
+            // 3. 顶级 3D 拟真 PBR 绿茵草皮（法线凹凸 + 粗糙度高光 + 根部环境光遮挡）
+            const pitchGeo = new THREE.PlaneGeometry(pitchW, pitchL, 32, 64);
+            pitchGeo.setAttribute('uv2', new THREE.BufferAttribute(pitchGeo.attributes.uv.array, 2));
+
+            const cur = PITCH_STYLES[currentPitchStyleIdx];
+            const pitchMat = new THREE.MeshStandardMaterial({
+                map: textures[`pitch_${cur.id}_diffuse`] || null,
+                normalMap: textures[`pitch_${cur.id}_normal`] || null,
+                normalScale: new THREE.Vector2(2.5, 2.5),   // 强劲的 3D 草丝立面阴影与立体感
+                roughnessMap: textures[`pitch_${cur.id}_roughness`] || null,
+                roughness: 0.65,
+                aoMap: textures.grassAO || null,
+                aoMapIntensity: 1.35,                       // 拟真草根深色凹陷接触阴影
+                metalness: 0.03
+            });
+            pitchMesh = new THREE.Mesh(pitchGeo, pitchMat);
+            pitchMesh.rotation.x = -Math.PI / 2;
+            pitchMesh.position.set(0, 0.01, 1.0);
+            pitchMesh.receiveShadow = true;
+            scene.add(pitchMesh);
+
+            // 4. 白色嵌入式草皮标线（微反光、吸附草叶法线起伏，告别浮空贴纸感）
+            pitchLineMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.45,
+                metalness: 0.05,
+                opacity: 0.92,
+                transparent: true,
+                normalMap: textures[`pitch_${cur.id}_normal`] || null,
+                normalScale: new THREE.Vector2(1.2, 1.2)
+            });
+
+            // 中线
+            const mid = new THREE.Mesh(new THREE.PlaneGeometry(G.halfW * 2, 0.16), pitchLineMat);
+            mid.rotation.x = -Math.PI / 2;
+            mid.position.set(0, 0.02, 0);
+            scene.add(mid);
+
+            // 中圈圆环
+            const ring = new THREE.Mesh(new THREE.RingGeometry(2.8, 3.0, 64), pitchLineMat);
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.set(0, 0.02, 0);
+            scene.add(ring);
+
+            createCountdownBadge();
+            buildBox(0, G.topZ + 3.0, 8.4, 4.2, pitchLineMat);
+        }
+
+        /* ==========================================================================
+           草坪切换交互与优雅 HUD Toast
+           ========================================================================== */
+        function setPitchStyle(idx, notify = true) {
+            currentPitchStyleIdx = (idx + PITCH_STYLES.length) % PITCH_STYLES.length;
+            const style = PITCH_STYLES[currentPitchStyleIdx];
+            const diffTex = textures[`pitch_${style.id}_diffuse`];
+            const normTex = textures[`pitch_${style.id}_normal`];
+            const roughTex = textures[`pitch_${style.id}_roughness`];
+
+            if (pitchMesh && diffTex) {
+                pitchMesh.material.map = diffTex;
+                pitchMesh.material.normalMap = normTex || null;
+                pitchMesh.material.roughnessMap = roughTex || null;
+                pitchMesh.material.needsUpdate = true;
+            }
+            if (pitchLineMat && normTex) {
+                pitchLineMat.normalMap = normTex;
+                pitchLineMat.needsUpdate = true;
+            }
+
+            const btnPitch = document.getElementById('btn-pitch');
+            if (btnPitch) {
+                btnPitch.innerText = style.icon;
+                btnPitch.title = `切换草坪 (当前: ${style.name})`;
+            }
+
+            if (notify) {
+                showPitchToast(`${style.icon} 草坪：${style.name}`);
+                Sound.play('bounce', 0.6, 1.4);
+            }
+        }
+
+        function showPitchToast(text) {
+            const toast = document.getElementById('pitch-toast');
+            if (!toast) return;
+            toast.innerText = text;
+            toast.classList.add('show');
+            if (pitchToastTimer) clearTimeout(pitchToastTimer);
+            pitchToastTimer = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 1500);
+        }
+
+        function createCountdownBadge() {
+            countdownMesh = new THREE.Mesh(
+                new THREE.PlaneGeometry(2.3, 2.3),
+                new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85 })
+            );
+            countdownMesh.rotation.x = -Math.PI / 2;
+            countdownMesh.position.set(0, 0.025, 0);
+            scene.add(countdownMesh);
+            updateCountdownTexture();
+        }
+
+        function updateCountdownTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 84px Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(String(countdown), 64, 64);
+            countdownMesh.material.map = new THREE.CanvasTexture(canvas);
+            countdownMesh.material.needsUpdate = true;
+        }
+
+        function buildBox(cx, cz, w, h, mat) {
+            const g = new THREE.Group();
+            const top = new THREE.Mesh(new THREE.PlaneGeometry(w, 0.16), mat);
+            top.rotation.x = -Math.PI / 2;
+            top.position.set(cx, 0.02, cz + h / 2);
+            g.add(top);
+
+            const l = new THREE.Mesh(new THREE.PlaneGeometry(0.16, h), mat);
+            l.rotation.x = -Math.PI / 2;
+            l.position.set(cx - w / 2, 0.02, cz);
+            g.add(l);
+
+            const r = new THREE.Mesh(new THREE.PlaneGeometry(0.16, h), mat);
+            r.rotation.x = -Math.PI / 2;
+            r.position.set(cx + w / 2, 0.02, cz);
+            g.add(r);
+            scene.add(g);
+        }
+
+        /* ==========================================================================
+           5. 洁白圆管流线护栏 (Smooth Tubing Bumper Rails)
+           ========================================================================== */
+        function buildSmoothRails() {
+            const railMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.15,
+                metalness: 0.2
+            });
+
+            const r = 0.35;
+            const hw = G.halfW;
+            const goalW = 6.8;
+
+            addCylinderRail(-hw + 1.2, G.topZ, -goalW / 2, G.topZ, r, railMat);
+            addCylinderRail(goalW / 2, G.topZ, hw - 1.2, G.topZ, r, railMat);
+
+            addCornerArc(-hw + 1.2, G.topZ + 1.2, 1.2, Math.PI * 1.5, Math.PI, r, railMat);
+            addCornerArc(hw - 1.2, G.topZ + 1.2, 1.2, Math.PI * 1.5, Math.PI * 2.0, r, railMat);
+
+            addCylinderRail(-hw, G.topZ + 1.2, -hw, G.funnelTopZ, r, railMat);
+            addCylinderRail(hw, G.topZ + 1.2, hw, G.funnelTopZ, r, railMat);
+
+            addCylinderRail(-hw, G.funnelTopZ, -G.pivotX, G.pivotZ, r, railMat);
+            addCylinderRail(hw, G.funnelTopZ, G.pivotX, G.pivotZ, r, railMat);
+
+            [-G.pivotX, G.pivotX].forEach(x => {
+                const post = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.48, 0.48, 1.0, 24),
+                    new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.5, roughness: 0.2 })
+                );
+                post.position.set(x, 0.5, G.pivotZ);
+                post.castShadow = true;
+                scene.add(post);
+            });
+        }
+
+        function addCylinderRail(x1, z1, x2, z2, r, mat) {
+            const p1 = new THREE.Vector3(x1, r + 0.15, z1);
+            const p2 = new THREE.Vector3(x2, r + 0.15, z2);
+            const dir = new THREE.Vector3().subVectors(p2, p1);
+            const len = dir.length();
+            if (len < 0.001) return;
+
+            const geo = new THREE.CylinderGeometry(r, r, len, 20);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(p1).addScaledVector(dir, 0.5);
+            mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+
+            walls.push({ x1, z1, x2, z2, r });
+        }
+
+        function addCornerArc(cx, cz, radius, a1, a2, r, mat) {
+            const steps = 8;
+            let prevX = cx + Math.cos(a1) * radius;
+            let prevZ = cz + Math.sin(a1) * radius;
+            for (let i = 1; i <= steps; i++) {
+                const a = a1 + (a2 - a1) * (i / steps);
+                const curX = cx + Math.cos(a) * radius;
+                const curZ = cz + Math.sin(a) * radius;
+                addCylinderRail(prevX, prevZ, curX, curZ, r, mat);
+                prevX = curX;
+                prevZ = curZ;
+            }
+        }
+
+        /* ==========================================================================
+           6. 水滴形渐细精密推杆
+           ========================================================================== */
+        function buildFlippers() {
+            const flipperMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.15,
+                metalness: 0.2
+            });
+
+            leftFlipper.mesh = makePaddle(G.flipperL, flipperMat, false);
+            leftFlipper.mesh.position.set(leftFlipper.px, 0.45, leftFlipper.pz);
+            scene.add(leftFlipper.mesh);
+
+            rightFlipper.mesh = makePaddle(G.flipperL, flipperMat, true);
+            rightFlipper.mesh.position.set(rightFlipper.px, 0.45, rightFlipper.pz);
+            scene.add(rightFlipper.mesh);
+        }
+
+        function makePaddle(len, mat, isRight) {
+            const grp = new THREE.Group();
+            const shape = new THREE.Shape();
+            const rBase = 0.45;
+            const rTip = 0.24;
+            shape.moveTo(0, -rBase);
+            shape.lineTo(len - rTip, -rTip);
+            shape.absarc(len - rTip, 0, rTip, -Math.PI / 2, Math.PI / 2, false);
+            shape.lineTo(0, rBase);
+            shape.absarc(0, 0, rBase, Math.PI / 2, -Math.PI / 2, false);
+
+            const extrudeSettings = { depth: 0.7, bevelEnabled: true, bevelSegments: 3, steps: 1, bevelSize: 0.06, bevelThickness: 0.06 };
+            const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.rotation.x = Math.PI / 2;
+            mesh.position.y = 0.35;
+            if (isRight) mesh.scale.set(-1, 1, 1);
+            mesh.castShadow = true;
+            grp.add(mesh);
+
+            return grp;
+        }
+
+        /* ==========================================================================
+           7. 3D 足球
+           ========================================================================== */
+        function buildBall() {
+            const geo = new THREE.SphereGeometry(G.ballR, 32, 32);
+            const mat = new THREE.MeshStandardMaterial({
+                map: textures.classic || null,
+                color: textures.classic ? 0xffffff : 0xf8fafc,
+                roughness: 0.25,
+                metalness: 0.08
+            });
+            ball.mesh = new THREE.Mesh(geo, mat);
+            ball.mesh.castShadow = true;
+            scene.add(ball.mesh);
+            resetBall();
+        }
+
+        function resetBall() {
+            ball.x = 0;
+            ball.y = G.ballR;
+            ball.z = 2;
+            ball.vx = (Math.random() - 0.5) * 6.0;
+            ball.vy = 0;
+            ball.vz = 14.0;
+            comboCount = 0;
+            ballSlipstreamTimer = 0;
+            goalState.active = false;
+            goalState.netSoundPlayed = false;
+            topGoalNet.reset();
+            document.getElementById('combo-badge').classList.remove('show');
+        }
+
+        /* ==========================================================================
+           8. 国际足联标准立体箱式球门与拟真尼龙编织织网 (Pro Stadium Goals & Nylon Nets)
+           ========================================================================== */
+        function buildGoals() {
+            const postMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                roughness: 0.18,
+                metalness: 0.22
+            });
+            const netTex = createGoalNetTexture();
+            const netMat = new THREE.MeshStandardMaterial({
+                map: netTex,
+                alphaMap: netTex,
+                transparent: true,
+                alphaTest: 0.08,
+                side: THREE.DoubleSide,
+                color: 0xffffff,
+                roughness: 0.72,
+                metalness: 0.04,
+                shadowSide: THREE.DoubleSide
+            });
+
+            // 1. 顶部对方主球门 (标准欧式箱式球门 + 真实物理动力学可变形球网)
+            buildGoal(0, G.topZ, 6.8, 2.8, 2.2, postMat, netMat, true);
+
+            // 2. 底部我方底门 (漏球判定区，同样配备完整立体球门框架与尼龙织网)
+            buildGoal(0, 18.5, 7.2, 2.5, 1.8, postMat, netMat, false);
+        }
+
+        function buildGoal(cx, cz, w, h, d, postMat, netMat, isTop) {
+            const g = new THREE.Group();
+            const sign = isTop ? -1 : 1;
+            const postR = 0.12;
+            const barR = 0.07;
+            const netYBottom = 0.06;
+            const netH = h - netYBottom;
+            const netTex = createGoalNetTexture();
+
+            // 1. 前门框：两侧主立柱
+            const p1 = new THREE.Mesh(new THREE.CylinderGeometry(postR, postR, h, 24), postMat);
+            p1.position.set(-w / 2, h / 2, 0);
+            p1.castShadow = true;
+            g.add(p1);
+
+            const p2 = new THREE.Mesh(new THREE.CylinderGeometry(postR, postR, h, 24), postMat);
+            p2.position.set(w / 2, h / 2, 0);
+            p2.castShadow = true;
+            g.add(p2);
+
+            // 2. 前门框：主横梁
+            const crossbar = new THREE.Mesh(new THREE.CylinderGeometry(postR, postR, w, 24), postMat);
+            crossbar.rotation.z = Math.PI / 2;
+            crossbar.position.set(0, h, 0);
+            crossbar.castShadow = true;
+            g.add(crossbar);
+
+            // 3. 转角圆角弯头 (Elbow joints)
+            const elbowL = new THREE.Mesh(new THREE.SphereGeometry(postR, 16, 16), postMat);
+            elbowL.position.set(-w / 2, h, 0);
+            g.add(elbowL);
+
+            const elbowR = new THREE.Mesh(new THREE.SphereGeometry(postR, 16, 16), postMat);
+            elbowR.position.set(w / 2, h, 0);
+            g.add(elbowR);
+
+            // 4. 欧式箱式球门后拉杆系统 (Stanchion Support Frame)
+            // 4.1 顶部水平后拉杆 (Top stay arms)
+            const topStayL = new THREE.Mesh(new THREE.CylinderGeometry(barR, barR, d, 16), postMat);
+            topStayL.rotation.x = Math.PI / 2;
+            topStayL.position.set(-w / 2, h, sign * d / 2);
+            g.add(topStayL);
+
+            const topStayR = new THREE.Mesh(new THREE.CylinderGeometry(barR, barR, d, 16), postMat);
+            topStayR.rotation.x = Math.PI / 2;
+            topStayR.position.set(w / 2, h, sign * d / 2);
+            g.add(topStayR);
+
+            // 4.2 后方顶部横撑杆 (Rear top crossbar)
+            const rearTopBar = new THREE.Mesh(new THREE.CylinderGeometry(barR, barR, w, 16), postMat);
+            rearTopBar.rotation.z = Math.PI / 2;
+            rearTopBar.position.set(0, h, sign * d);
+            g.add(rearTopBar);
+
+            // 4.3 地面侧边框 (Ground side rails)
+            const groundSideL = new THREE.Mesh(new THREE.CylinderGeometry(barR, barR, d, 16), postMat);
+            groundSideL.rotation.x = Math.PI / 2;
+            groundSideL.position.set(-w / 2, netYBottom, sign * d / 2);
+            g.add(groundSideL);
+
+            const groundSideR = new THREE.Mesh(new THREE.CylinderGeometry(barR, barR, d, 16), postMat);
+            groundSideR.rotation.x = Math.PI / 2;
+            groundSideR.position.set(w / 2, netYBottom, sign * d / 2);
+            g.add(groundSideR);
+
+            // 4.4 地面后横杆 (Ground rear anchor rail)
+            const groundRearBar = new THREE.Mesh(new THREE.CylinderGeometry(barR, barR, w, 16), postMat);
+            groundRearBar.rotation.z = Math.PI / 2;
+            groundRearBar.position.set(0, netYBottom, sign * d);
+            g.add(groundRearBar);
+
+            // 4.5 刚性斜撑桁架 (Diagonal reinforcement braces)
+            const braceLen = Math.hypot(d * 0.85, h);
+            const braceAngle = Math.atan2(d * 0.85, h);
+
+            const braceL = new THREE.Mesh(new THREE.CylinderGeometry(barR * 0.85, barR * 0.85, braceLen, 16), postMat);
+            braceL.rotation.x = sign * braceAngle;
+            braceL.position.set(-w / 2, h / 2, sign * (d * 0.85) / 2);
+            g.add(braceL);
+
+            const braceR = new THREE.Mesh(new THREE.CylinderGeometry(barR * 0.85, barR * 0.85, braceLen, 16), postMat);
+            braceR.rotation.x = sign * braceAngle;
+            braceR.position.set(w / 2, h / 2, sign * (d * 0.85) / 2);
+            g.add(braceR);
+
+            // 5. 拟真尼龙编织织网多面板 (顶网、左网、右网、后网)
+            function makeNetPanelMat(repU, repV) {
+                const tex = netTex.clone();
+                tex.repeat.set(repU, repV);
+                tex.wrapS = THREE.RepeatWrapping;
+                tex.wrapT = THREE.RepeatWrapping;
+                tex.needsUpdate = true;
+                return new THREE.MeshStandardMaterial({
+                    map: tex,
+                    transparent: true,
+                    alphaTest: 0.10,
+                    side: THREE.DoubleSide,
+                    color: 0xffffff,
+                    roughness: 0.58,
+                    metalness: 0.04
+                });
+            }
+
+            // 5.1 顶网 (Roof net)
+            const roofGeo = new THREE.PlaneGeometry(w, d, 12, 6);
+            const roofMesh = new THREE.Mesh(roofGeo, makeNetPanelMat(7, 2.5));
+            roofMesh.rotation.x = Math.PI / 2;
+            roofMesh.position.set(0, h, sign * d / 2);
+            g.add(roofMesh);
+
+            // 5.2 左侧网 (Left side net)
+            const sideLGeo = new THREE.PlaneGeometry(d, netH, 6, 8);
+            const sideLMesh = new THREE.Mesh(sideLGeo, makeNetPanelMat(2.5, 3));
+            sideLMesh.rotation.y = Math.PI / 2;
+            sideLMesh.position.set(-w / 2, (h + netYBottom) / 2, sign * d / 2);
+            g.add(sideLMesh);
+
+            // 5.3 右侧网 (Right side net)
+            const sideRGeo = new THREE.PlaneGeometry(d, netH, 6, 8);
+            const sideRMesh = new THREE.Mesh(sideRGeo, makeNetPanelMat(2.5, 3));
+            sideRMesh.rotation.y = -Math.PI / 2;
+            sideRMesh.position.set(w / 2, (h + netYBottom) / 2, sign * d / 2);
+            g.add(sideRMesh);
+
+            // 5.4 后网 (Back wall net)
+            const backGeo = new THREE.PlaneGeometry(w, netH, 16, 8);
+            const backMesh = new THREE.Mesh(backGeo, makeNetPanelMat(7, 3));
+            backMesh.position.set(0, (h + netYBottom) / 2, sign * d);
+            if (!isTop) {
+                backMesh.rotation.y = Math.PI;
+            }
+            g.add(backMesh);
+
+            g.position.set(cx, 0, cz);
+            scene.add(g);
+
+            if (isTop) {
+                topGoalNet.init(backMesh);
+            }
+        }
+
+        /* ==========================================================================
+           8.5 宏伟欧冠全景球场氛围系统 (Stadium Grand Arena Atmosphere)
+           - 源自前期精美插画与分享卡资产提炼
+           - 远景看台与夜空探照灯天幕 (Panoramic Grandstand Backdrop)
+           - 场边微倾角动态 LED 滚屏广告牌 (Perimeter LED Boards)
+           - 场边看台阶梯与助威观众群 (Sideline Tiered Grandstands)
+           - 欧冠金杯发光展示基台 (UEFA Champions Trophy Plinth)
+           - 四角夜场射灯塔与星芒光晕 (Corner Floodlight Pylons & Flares)
+           - 进球漫天金色纸花雨物理系统 (Confetti Ribbon System)
+           ========================================================================== */
+        function createFlareTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 128;
+            canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+            grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+            grad.addColorStop(0.25, 'rgba(186, 230, 253, 0.85)');
+            grad.addColorStop(0.55, 'rgba(56, 189, 248, 0.25)');
+            grad.addColorStop(1, 'rgba(11, 19, 34, 0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 128, 128);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function buildStadiumAtmosphere() {
+            // 1. 宏伟远景看台天幕与夜空射灯穹顶 (Stadium Panoramic Grandstand Backdrop)
+            if (textures.stadium_backdrop) {
+                const backdropW = 44.0, backdropH = 22.0;
+                const backdropGeo = new THREE.PlaneGeometry(backdropW, backdropH);
+                const backdropMat = new THREE.MeshBasicMaterial({
+                    map: textures.stadium_backdrop,
+                    transparent: true,
+                    opacity: 0.95,
+                    depthWrite: false,
+                    side: THREE.DoubleSide
+                });
+                const backdropMesh = new THREE.Mesh(backdropGeo, backdropMat);
+                // 位于球门及看台深后方 Z = -22.5，微倾斜对准俯视相机，四周阿尔法羽化自然融入 Slate 蓝底色
+                backdropMesh.position.set(0, 11.5, -22.5);
+                backdropMesh.rotation.x = -0.85;
+                scene.add(backdropMesh);
+            }
+
+            // 2. 边线微倾角科技感环场 LED 电子广告牌 (Perimeter LED Display Boards)
+            if (textures.stadium_led) {
+                // 左侧 LED 屏 (微倾斜迎向高空俯视镜头)
+                ledTexLeft = textures.stadium_led.clone();
+                ledTexLeft.wrapS = THREE.RepeatWrapping;
+                ledTexLeft.wrapT = THREE.ClampToEdgeWrapping;
+                ledTexLeft.repeat.set(5.0, 1.0);
+                ledTexLeft.needsUpdate = true;
+
+                const ledMatLeft = new THREE.MeshBasicMaterial({
+                    map: ledTexLeft,
+                    side: THREE.FrontSide
+                });
+                const screenGeo = new THREE.PlaneGeometry(28.0, 0.85);
+
+                const screenLeft = new THREE.Mesh(screenGeo, ledMatLeft);
+                screenLeft.position.set(-8.20, 0.52, 1.0);
+                screenLeft.rotation.y = Math.PI / 2;
+                screenLeft.rotation.z = -0.38;
+                scene.add(screenLeft);
+
+                // 右侧 LED 屏
+                ledTexRight = textures.stadium_led.clone();
+                ledTexRight.wrapS = THREE.RepeatWrapping;
+                ledTexRight.wrapT = THREE.ClampToEdgeWrapping;
+                ledTexRight.repeat.set(5.0, 1.0);
+                ledTexRight.needsUpdate = true;
+
+                const ledMatRight = new THREE.MeshBasicMaterial({
+                    map: ledTexRight,
+                    side: THREE.FrontSide
+                });
+                const screenRight = new THREE.Mesh(screenGeo, ledMatRight);
+                screenRight.position.set(8.20, 0.52, 1.0);
+                screenRight.rotation.y = -Math.PI / 2;
+                screenRight.rotation.z = 0.38;
+                scene.add(screenRight);
+
+                // 曜黑铝合金结构机壳
+                const frameMat = new THREE.MeshStandardMaterial({
+                    color: 0x0f172a,
+                    roughness: 0.2,
+                    metalness: 0.8
+                });
+                [-8.42, 8.42].forEach(x => {
+                    const casing = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.95, 28.0), frameMat);
+                    casing.position.set(x, 0.47, 1.0);
+                    casing.castShadow = true;
+                    scene.add(casing);
+                });
+
+                // 顶沿科技霓虹光边 (左电光青蓝，右冠军流金)
+                const stripGeo = new THREE.BoxGeometry(0.08, 0.05, 28.0);
+                const stripLeft = new THREE.Mesh(stripGeo, new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+                stripLeft.position.set(-8.22, 0.96, 1.0);
+                scene.add(stripLeft);
+
+                const stripRight = new THREE.Mesh(stripGeo, new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+                stripRight.position.set(8.22, 0.96, 1.0);
+                scene.add(stripRight);
+            }
+
+            // 3. 欧冠商业级拟真观众席与助威系统 (Realistic Seated Crowd & Cheering Fans)
+            buildRealisticStadiumCrowd();
+
+            // 4. 场边欧冠金杯发光展台 (Champions Trophy Pedestal)
+            if (textures.stadium_trophy) {
+                const trophyGroup = new THREE.Group();
+                const plinthGeo = new THREE.CylinderGeometry(0.95, 1.18, 0.48, 16);
+                const plinthMat = new THREE.MeshStandardMaterial({
+                    color: 0x0c1322,
+                    roughness: 0.25,
+                    metalness: 0.75
+                });
+                const plinth = new THREE.Mesh(plinthGeo, plinthMat);
+                plinth.position.set(0, 0.24, 0);
+                plinth.castShadow = true;
+                trophyGroup.add(plinth);
+
+                const goldRingGeo = new THREE.TorusGeometry(0.98, 0.04, 12, 32);
+                const goldRingMat = new THREE.MeshStandardMaterial({
+                    color: 0xfacc15,
+                    emissive: 0xd97706,
+                    emissiveIntensity: 0.7,
+                    metalness: 0.9,
+                    roughness: 0.15
+                });
+                const goldRing = new THREE.Mesh(goldRingGeo, goldRingMat);
+                goldRing.rotation.x = Math.PI / 2;
+                goldRing.position.set(0, 0.48, 0);
+                trophyGroup.add(goldRing);
+
+                const trophyMat = new THREE.MeshBasicMaterial({
+                    map: textures.stadium_trophy,
+                    transparent: true,
+                    depthWrite: false,
+                    side: THREE.DoubleSide
+                });
+                stadiumTrophyMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 2.85), trophyMat);
+                stadiumTrophyMesh.position.set(0, 1.85, 0);
+                stadiumTrophyMesh.rotation.x = -0.85;
+                trophyGroup.add(stadiumTrophyMesh);
+
+                const trophyLight = new THREE.PointLight(0xfde047, 1.4, 6.0);
+                trophyLight.position.set(0, 2.5, 0.4);
+                trophyGroup.add(trophyLight);
+
+                trophyGroup.position.set(6.2, 0, G.topZ - 0.9);
+                scene.add(trophyGroup);
+            }
+
+            // 5. 四角球场高空射灯塔与星芒光晕 (Corner Floodlight Pylons & Starburst Flares)
+            const flareTex = createFlareTexture();
+            const towerPoles = [
+                { x: -10.5, z: -16.2, target: [0, 0, -4] },
+                { x: 10.5, z: -16.2, target: [0, 0, -4] },
+                { x: -10.5, z: 16.2, target: [0, 0, 4] },
+                { x: 10.5, z: 16.2, target: [0, 0, 4] }
+            ];
+            const poleMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8, roughness: 0.2 });
+            const flareMat = new THREE.SpriteMaterial({
+                map: flareTex,
+                color: 0xffffff,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                opacity: 0.9
+            });
+
+            towerPoles.forEach(tp => {
+                const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 13.0, 8), poleMat);
+                mast.position.set(tp.x, 6.5, tp.z);
+                scene.add(mast);
+
+                const head = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.85, 0.4), poleMat);
+                head.position.set(tp.x, 13.0, tp.z);
+                head.lookAt(tp.target[0], 0, tp.target[2]);
+                scene.add(head);
+
+                const flare = new THREE.Sprite(flareMat);
+                flare.position.set(tp.x, 13.2, tp.z);
+                flare.scale.set(4.5, 4.5, 1.0);
+                scene.add(flare);
+            });
+        }
+
+        /* ==========================================================================
+           进球漫天金色彩带纸花系统 (Zero-GC Confetti Ribbon Celebration)
+           ========================================================================== */
+        function initStadiumConfetti() {
+            const confettiColors = [0xfacc15, 0x38bdf8, 0xffffff, 0xf43f5e, 0x10b981, 0xa855f7];
+            const geo = new THREE.PlaneGeometry(0.32, 0.16);
+            for (let i = 0; i < 120; i++) {
+                const color = confettiColors[i % confettiColors.length];
+                const mat = new THREE.MeshBasicMaterial({
+                    color,
+                    side: THREE.DoubleSide,
+                    transparent: true,
+                    opacity: 0
+                });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.visible = false;
+                scene.add(mesh);
+                stadiumConfettiPool.push({
+                    mesh,
+                    active: false,
+                    x: 0, y: 0, z: 0,
+                    vx: 0, vy: 0, vz: 0,
+                    rotX: 0, rotY: 0, rotZ: 0,
+                    rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0,
+                    flutterPhase: Math.random() * Math.PI * 2,
+                    flutterFreq: 4.0 + Math.random() * 4.0,
+                    life: 0,
+                    maxLife: 2.8
+                });
+            }
+        }
+
+        function triggerConfettiShower() {
+            stadiumConfettiPool.forEach(c => {
+                c.active = true;
+                c.mesh.visible = true;
+                c.mesh.material.opacity = 1.0;
+                c.x = (Math.random() - 0.5) * 12.0;
+                c.y = 8.0 + Math.random() * 7.5;
+                c.z = G.topZ - 1.5 + Math.random() * 8.0;
+                c.vx = (Math.random() - 0.5) * 4.0;
+                c.vy = -0.8 - Math.random() * 2.2;
+                c.vz = 1.0 + Math.random() * 3.5;
+                c.rotX = Math.random() * Math.PI;
+                c.rotY = Math.random() * Math.PI;
+                c.rotZ = Math.random() * Math.PI;
+                c.rotSpeedX = (Math.random() - 0.5) * 9.0;
+                c.rotSpeedY = (Math.random() - 0.5) * 9.0;
+                c.rotSpeedZ = (Math.random() - 0.5) * 9.0;
+                c.life = 0;
+                c.maxLife = 2.4 + Math.random() * 1.0;
+                c.mesh.position.set(c.x, c.y, c.z);
+            });
+        }
+
+        function updateStadiumAtmosphere(dt) {
+            // 1. 场边 LED 滚屏流动动画 (科技动感流光)
+            if (ledTexLeft) ledTexLeft.offset.x -= dt * 0.05;
+            if (ledTexRight) ledTexRight.offset.x += dt * 0.05;
+
+            // 2. 漫天金色礼花纸带物理飘落与旋转
+            stadiumConfettiPool.forEach(c => {
+                if (!c.active) return;
+                c.life += dt;
+                if (c.life >= c.maxLife || c.y <= 0.08) {
+                    c.active = false;
+                    c.mesh.visible = false;
+                    return;
+                }
+                const progress = c.life / c.maxLife;
+                c.mesh.material.opacity = progress < 0.7 ? 1.0 : (1.0 - progress) / 0.3;
+
+                c.flutterPhase += dt * c.flutterFreq;
+                const driftX = Math.sin(c.flutterPhase) * 1.4;
+                const driftZ = Math.cos(c.flutterPhase * 0.8) * 0.8;
+
+                c.vy = Math.max(-3.5, c.vy - 4.5 * dt);
+                c.x += (c.vx + driftX) * dt;
+                c.y += c.vy * dt;
+                c.z += (c.vz + driftZ) * dt;
+
+                c.rotX += c.rotSpeedX * dt;
+                c.rotY += c.rotSpeedY * dt;
+                c.rotZ += c.rotSpeedZ * dt;
+
+                c.mesh.position.set(c.x, c.y, c.z);
+                c.mesh.rotation.set(c.rotX, c.rotY, c.rotZ);
+            });
+        }
+
+        /* ==========================================================================
+           8.6 欧冠商业级拟真观众席与助威系统 (Realistic Seated Crowd & Cheering Fans)
+           - 拒绝简易圆球，采用欧式专业折叠座椅 (Seat pan + Ergonomic backrest)
+           - 3D 拟真人型球迷：俱乐部战袍、多肤色面部、发型/棒球帽、大腿与多种助威手臂姿态
+           - 助威长围巾 (Club Scarves) 与 3D 动态飘扬队旗 (Waving Team Flags)
+           - 高清真实球迷照片图层结合 (Photorealistic Crowd Billboard Layers)
+           - 进球全场起立欢呼动力学 (Goal Standing Ovation Animation)
+           ========================================================================== */
+        function buildRealisticStadiumCrowd() {
+            // 1. 材质定义池 (保证 0 冗余内存开销)
+            const concreteMat = new THREE.MeshStandardMaterial({
+                color: 0x162032,
+                roughness: 0.9,
+                metalness: 0.1
+            });
+            const seatMatBlue = new THREE.MeshStandardMaterial({
+                color: 0x1e40af,
+                roughness: 0.45,
+                metalness: 0.15
+            });
+            const seatMatNavy = new THREE.MeshStandardMaterial({
+                color: 0x0f172a,
+                roughness: 0.5,
+                metalness: 0.2
+            });
+
+            const skinMats = [
+                new THREE.MeshStandardMaterial({ color: 0xfbcfe8, roughness: 0.55 }), // 浅粉肤
+                new THREE.MeshStandardMaterial({ color: 0xf5d0b5, roughness: 0.55 }), // 小麦色
+                new THREE.MeshStandardMaterial({ color: 0xc68642, roughness: 0.55 }), // 古铜色
+                new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.55 })  // 深肤色
+            ];
+            const hairMats = [
+                new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.8 }), // 黑色
+                new THREE.MeshStandardMaterial({ color: 0x3f2e21, roughness: 0.8 }), // 深棕
+                new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.7 }), // 金褐
+                new THREE.MeshStandardMaterial({ color: 0x71717a, roughness: 0.7 })  // 银灰
+            ];
+            const kitMats = [
+                new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4 }), // 皇马白
+                new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 }), // 阿森纳/利物浦红
+                new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.4 }), // 切尔西蓝
+                new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.4 }), // 多特蒙德黄
+                new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.4 }), // 凯尔特人绿
+                new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.4 }), // 曼城天蓝
+                new THREE.MeshStandardMaterial({ color: 0xf43f5e, roughness: 0.4 }), // 珊瑚粉红
+                new THREE.MeshStandardMaterial({ color: 0x9333ea, roughness: 0.4 })  // 佛罗伦萨紫
+            ];
+            const pantsMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
+
+            const seatPanGeo = new THREE.BoxGeometry(0.44, 0.08, 0.38);
+            const seatBackGeo = new THREE.BoxGeometry(0.44, 0.38, 0.06);
+            const armGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.34, 8);
+
+            function createSingleSpectator(kitIdx, skinIdx, hairIdx, poseType) {
+                const group = new THREE.Group();
+
+                // 1. 真实专业立体塑料折叠座椅 (Seat pan & curved backrest)
+                const isBlueSeat = (kitIdx % 2 === 0);
+                const sMat = isBlueSeat ? seatMatBlue : seatMatNavy;
+                const pan = new THREE.Mesh(seatPanGeo, sMat);
+                pan.position.set(0, 0.04, 0);
+                group.add(pan);
+
+                const back = new THREE.Mesh(seatBackGeo, sMat);
+                back.position.set(0, 0.24, -0.17);
+                back.rotation.x = -0.15; // 欧式工学微后仰
+                group.add(back);
+
+                // 2. 拟真观众躯体 (Fan Humanoid Figure)
+                const person = new THREE.Group();
+                person.position.set(0, 0.08, 0);
+
+                // 腿部 (坐姿大腿)
+                const thighs = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.14, 0.32), pantsMat);
+                thighs.position.set(0, 0.07, 0.06);
+                person.add(thighs);
+
+                // 躯干战袍 (Torso in club jersey)
+                const torso = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.44, 0.24), kitMats[kitIdx % kitMats.length]);
+                torso.position.set(0, 0.36, -0.02);
+                torso.castShadow = true;
+                person.add(torso);
+
+                // 头部与面部 (Head with flesh tone)
+                const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), skinMats[skinIdx % skinMats.length]);
+                head.position.set(0, 0.31, 0);
+                torso.add(head);
+
+                // 发型 / 俱乐部棒球帽 (Hair or baseball cap)
+                if (hairIdx < 3) {
+                    const hair = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.136, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.58),
+                        hairMats[hairIdx % hairMats.length]
+                    );
+                    hair.position.set(0, 0.02, 0);
+                    head.add(hair);
+                } else {
+                    const capDome = new THREE.Mesh(
+                        new THREE.SphereGeometry(0.138, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.62),
+                        kitMats[(kitIdx + 2) % kitMats.length]
+                    );
+                    head.add(capDome);
+                    const visor = new THREE.Mesh(
+                        new THREE.BoxGeometry(0.16, 0.025, 0.12),
+                        kitMats[(kitIdx + 2) % kitMats.length]
+                    );
+                    visor.position.set(0, -0.02, 0.14);
+                    head.add(visor);
+                }
+
+                // 助威手臂 (Arms with active fan poses)
+                const armSkinMat = skinMats[skinIdx % skinMats.length];
+                const lArm = new THREE.Mesh(armGeo, armSkinMat);
+                const rArm = new THREE.Mesh(armGeo, armSkinMat);
+
+                if (poseType === 0) {
+                    // 双臂高举欢呼 (V-Victory cheer)
+                    lArm.position.set(-0.25, 0.16, 0.02);
+                    lArm.rotation.set(-0.2, 0, 0.55);
+                    rArm.position.set(0.25, 0.16, 0.02);
+                    rArm.rotation.set(-0.2, 0, -0.55);
+                } else if (poseType === 1) {
+                    // 单臂举拳冲天，左手扶膝
+                    lArm.position.set(-0.22, -0.12, 0.12);
+                    lArm.rotation.set(1.2, 0, 0.1);
+                    rArm.position.set(0.25, 0.18, 0.04);
+                    rArm.rotation.set(-0.35, 0, -0.4);
+                } else if (poseType === 2) {
+                    // 双臂胸前鼓掌 (Clapping)
+                    lArm.position.set(-0.16, 0.02, 0.16);
+                    lArm.rotation.set(1.0, 0.45, 0);
+                    rArm.position.set(0.16, 0.02, 0.16);
+                    rArm.rotation.set(1.0, -0.45, 0);
+                } else if (poseType === 3) {
+                    // 举起俱乐部横幅围巾 (Champions Scarf)
+                    lArm.position.set(-0.24, 0.15, 0.02);
+                    lArm.rotation.set(-0.1, 0, 0.45);
+                    rArm.position.set(0.24, 0.15, 0.02);
+                    rArm.rotation.set(-0.1, 0, -0.45);
+
+                    const scarfMat = new THREE.MeshStandardMaterial({
+                        color: kitMats[kitIdx % kitMats.length].color,
+                        roughness: 0.6,
+                        side: THREE.DoubleSide
+                    });
+                    const scarf = new THREE.Mesh(new THREE.PlaneGeometry(0.88, 0.18), scarfMat);
+                    scarf.position.set(0, 0.32, 0.12);
+                    torso.add(scarf);
+                }
+
+                torso.add(lArm);
+                torso.add(rArm);
+                group.add(person);
+
+                return {
+                    root: group,
+                    person,
+                    torso,
+                    lArm,
+                    rArm,
+                    poseType,
+                    initY: 0.08,
+                    animPhase: Math.random() * Math.PI * 2
+                };
+            }
+
+            function createWavingFlag(x, y, z, rotY, color1, color2) {
+                const group = new THREE.Group();
+                const pole = new THREE.Mesh(
+                    new THREE.CylinderGeometry(0.04, 0.05, 2.8, 8),
+                    new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8, roughness: 0.2 })
+                );
+                pole.position.set(0, 1.4, 0);
+                group.add(pole);
+
+                const flagGeo = new THREE.PlaneGeometry(1.4, 0.88, 8, 4);
+                const flagCanvas = document.createElement('canvas');
+                flagCanvas.width = 128; flagCanvas.height = 80;
+                const fctx = flagCanvas.getContext('2d');
+                fctx.fillStyle = color1; fctx.fillRect(0, 0, 128, 80);
+                fctx.fillStyle = color2;
+                fctx.beginPath();
+                fctx.moveTo(0, 0); fctx.lineTo(128, 0); fctx.lineTo(0, 80); fctx.fill();
+                const flagTex = new THREE.CanvasTexture(flagCanvas);
+
+                const flagMat = new THREE.MeshStandardMaterial({
+                    map: flagTex,
+                    roughness: 0.6,
+                    side: THREE.DoubleSide
+                });
+                const flagMesh = new THREE.Mesh(flagGeo, flagMat);
+                flagMesh.position.set(0.70, 2.25, 0);
+                group.add(flagMesh);
+
+                group.position.set(x, y, z);
+                group.rotation.y = rotY;
+                scene.add(group);
+
+                stadiumFlags.push({ mesh: flagMesh, geo: flagGeo, phase: Math.random() * Math.PI });
+            }
+
+            // ==========================================
+            // A. 顶部主看台 (Top Grandstand Behind Goal)
+            // ==========================================
+            // 1. 三级阶梯混凝土看台基座 (Stepped Concrete Risers)
+            const topTiers = [
+                { y: 0.28, z: G.topZ - 2.8, h: 0.55, d: 1.1 },
+                { y: 0.62, z: G.topZ - 3.8, h: 1.20, d: 1.1 },
+                { y: 0.95, z: G.topZ - 4.8, h: 1.85, d: 1.1 }
+            ];
+            topTiers.forEach(t => {
+                const mesh = new THREE.Mesh(new THREE.BoxGeometry(16.8, t.h, t.d), concreteMat);
+                mesh.position.set(0, t.y, t.z);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                scene.add(mesh);
+            });
+
+            // 顶部看台后矮墙
+            const topWall = new THREE.Mesh(new THREE.BoxGeometry(16.8, 1.4, 0.28), concreteMat);
+            topWall.position.set(0, 2.2, G.topZ - 5.45);
+            scene.add(topWall);
+
+            // 2. 顶部看台观众排布 (3 排，每排 14 人 = 42 位真实人形球迷)
+            topTiers.forEach((tier, rowIdx) => {
+                const count = 14;
+                const startX = -6.2;
+                const endX = 6.2;
+                const stepX = (endX - startX) / (count - 1);
+                const surfaceY = tier.y + tier.h / 2;
+
+                for (let i = 0; i < count; i++) {
+                    const kit = (i + rowIdx * 3) % kitMats.length;
+                    const skin = (i * 2 + rowIdx) % skinMats.length;
+                    const hair = (i * 3 + rowIdx * 2) % 5;
+                    const pose = (i + rowIdx) % 4;
+
+                    const spec = createSingleSpectator(kit, skin, hair, pose);
+                    spec.root.position.set(startX + i * stepX + (Math.random() - 0.5) * 0.08, surfaceY, tier.z);
+                    scene.add(spec.root);
+                    stadiumSpectators.push(spec);
+                }
+            });
+
+            // 3. 顶部高清真实球迷切片条带 (Photorealistic Crowd Billboard Layer)
+            if (textures.crowd_strip) {
+                const topStripGeo = new THREE.PlaneGeometry(16.8, 3.2);
+                const topStripMat = new THREE.MeshBasicMaterial({
+                    map: textures.crowd_strip,
+                    transparent: true,
+                    opacity: 0.95,
+                    depthWrite: false,
+                    side: THREE.DoubleSide
+                });
+                const topStripMesh = new THREE.Mesh(topStripGeo, topStripMat);
+                topStripMesh.position.set(0, 3.3, G.topZ - 5.35);
+                topStripMesh.rotation.x = -0.85;
+                scene.add(topStripMesh);
+            }
+
+            // 4. 顶部看台 3D 挥舞大队旗
+            createWavingFlag(-6.6, 1.85, G.topZ - 4.9, 0.3, '#dc2626', '#ffffff');
+            createWavingFlag(0, 1.85, G.topZ - 4.9, 0, '#2563eb', '#eab308');
+            createWavingFlag(6.6, 1.85, G.topZ - 4.9, -0.3, '#16a34a', '#ffffff');
+
+            // ==========================================
+            // B. 左右边线看台 (Sideline Grandstands)
+            // ==========================================
+            const sideTiers = [
+                { offset: 9.6, y: 0.20, h: 0.40, w: 1.6 },
+                { offset: 11.3, y: 0.42, h: 0.84, w: 1.6 },
+                { offset: 13.0, y: 0.65, h: 1.30, w: 1.6 }
+            ];
+
+            [-1, 1].forEach(dir => {
+                // 1. 阶梯基座
+                sideTiers.forEach(t => {
+                    const mesh = new THREE.Mesh(new THREE.BoxGeometry(t.w, t.h, 26.0), concreteMat);
+                    mesh.position.set(dir * t.offset, t.y, 1.0);
+                    mesh.castShadow = true;
+                    mesh.receiveShadow = true;
+                    scene.add(mesh);
+                });
+
+                // 2. 边线观众排布 (前 2 级阶梯，每级 15 人 = 30 人 × 2 侧 = 60 位人形球迷)
+                [sideTiers[0], sideTiers[1]].forEach((tier, rowIdx) => {
+                    const count = 15;
+                    const startZ = -10.5;
+                    const endZ = 12.0;
+                    const stepZ = (endZ - startZ) / (count - 1);
+                    const surfaceY = tier.y + tier.h / 2;
+
+                    for (let i = 0; i < count; i++) {
+                        const kit = (i * 2 + rowIdx + (dir > 0 ? 3 : 0)) % kitMats.length;
+                        const skin = (i + rowIdx * 2) % skinMats.length;
+                        const hair = (i * 2 + rowIdx) % 5;
+                        const pose = (i * 3 + rowIdx) % 4;
+
+                        const spec = createSingleSpectator(kit, skin, hair, pose);
+                        spec.root.position.set(dir * tier.offset, surfaceY, startZ + i * stepZ + (Math.random() - 0.5) * 0.1);
+                        spec.root.rotation.y = (dir > 0 ? -Math.PI / 2 : Math.PI / 2); // 面朝赛场
+                        scene.add(spec.root);
+                        stadiumSpectators.push(spec);
+                    }
+                });
+
+                // 3. 边线第 3 级高台高清真实球迷条带
+                if (textures.crowd_strip) {
+                    const sideStripGeo = new THREE.PlaneGeometry(24.5, 2.2);
+                    const sideStripMat = new THREE.MeshBasicMaterial({
+                        map: textures.crowd_strip,
+                        transparent: true,
+                        opacity: 0.92,
+                        depthWrite: false,
+                        side: THREE.DoubleSide
+                    });
+                    const sideStripMesh = new THREE.Mesh(sideStripGeo, sideStripMat);
+                    sideStripMesh.position.set(dir * 13.0, 2.0, 1.0);
+                    sideStripMesh.rotation.y = (dir > 0 ? -Math.PI / 2 : Math.PI / 2);
+                    sideStripMesh.rotation.z = dir * 0.45; // 倾角仰面朝向俯视镜头
+                    scene.add(sideStripMesh);
+                }
+
+                // 4. 边线 3D 挥舞队旗
+                createWavingFlag(dir * 11.3, 0.84, -6.0, dir * 0.8, '#f59e0b', '#0f172a');
+                createWavingFlag(dir * 11.3, 0.84, 8.0, dir * 0.8, '#3b82f6', '#ffffff');
+            });
+        }
+
+        function updateStadiumCrowd(dt, time) {
+            const isGoal = (goalCelebrationTimer > 0);
+
+            // 1. 拟真观众起伏与进球起立狂欢 (Standing Ovation)
+            stadiumSpectators.forEach(s => {
+                s.animPhase += dt * (isGoal ? 12.0 : 2.5);
+
+                if (isGoal) {
+                    // 进球瞬间全体立正起立、疯狂挥臂狂欢
+                    const jump = Math.abs(Math.sin(s.animPhase)) * 0.22;
+                    s.person.position.y = s.initY + 0.46 + jump;
+                    s.torso.rotation.x = -0.15;
+                    if (s.poseType === 0 || s.poseType === 3) {
+                        s.lArm.rotation.x = -0.3 + Math.sin(s.animPhase * 2) * 0.35;
+                        s.rArm.rotation.x = -0.3 + Math.cos(s.animPhase * 2) * 0.35;
+                    } else if (s.poseType === 1) {
+                        s.rArm.rotation.x = -0.4 + Math.sin(s.animPhase * 3) * 0.4;
+                    } else {
+                        s.lArm.rotation.y = 0.45 + Math.sin(s.animPhase * 3) * 0.25;
+                        s.rArm.rotation.y = -0.45 - Math.sin(s.animPhase * 3) * 0.25;
+                    }
+                } else {
+                    // 常态轻微呼吸微动与看台节奏
+                    s.person.position.y = s.initY + Math.sin(s.animPhase) * 0.02;
+                    s.torso.rotation.x = 0;
+                    if (s.poseType === 0) {
+                        s.lArm.rotation.x = -0.2 + Math.sin(s.animPhase * 0.8) * 0.06;
+                        s.rArm.rotation.x = -0.2 + Math.cos(s.animPhase * 0.8) * 0.06;
+                    } else if (s.poseType === 2) {
+                        s.lArm.rotation.y = 0.45 + Math.sin(s.animPhase * 1.5) * 0.10;
+                        s.rArm.rotation.y = -0.45 - Math.sin(s.animPhase * 1.5) * 0.10;
+                    }
+                }
+            });
+
+            // 2. 队旗迎风摆动动力学 (Vertex Wave Physics)
+            const flagFreq = isGoal ? 11.0 : 4.5;
+            const flagAmp = isGoal ? 0.20 : 0.09;
+            stadiumFlags.forEach(f => {
+                f.phase += dt * flagFreq;
+                const pos = f.geo.attributes.position;
+                for (let i = 0; i < pos.count; i++) {
+                    const u = pos.getX(i);
+                    if (u > 0.08) {
+                        const wave = Math.sin(f.phase + u * 4.0) * flagAmp * (u / 1.4);
+                        pos.setZ(i, wave);
+                    }
+                }
+                pos.needsUpdate = true;
+                f.geo.computeVertexNormals();
+            });
+        }
+
+        /* ==========================================================================
+           9. 电脑防守球员阵容 (橙色门将 + 蓝色 10 号、7 号，绝不自摆乌龙)
+           ========================================================================== */
+        function buildPlayers() {
+            // 1. 橙色门将 (守门员守在门线前: G.topZ + 0.8 = -11.7，绝不前突堵门)
+            const keeper = makeHumanoid(0xf97316, 0x1e293b, 0xffffff, 'top_keeper', {
+                baseX: 0, baseZ: G.topZ + 0.8, amplitude: 0.9, speed: 1.2, phase: 0
+            });
+            scene.add(keeper.group);
+            characters.push(keeper);
+
+            // 2. 蓝色双后卫 (大禁区线: Z = -6.5，左/右半区反相巡逻，形成动态射门穿透空档)
+            const defL = makeHumanoid(0x2563eb, 0xffffff, 0xef4444, 'defender', {
+                baseX: -2.8, baseZ: -6.5, amplitude: 1.5, speed: 1.4, phase: 0
+            });
+            scene.add(defL.group);
+            characters.push(defL);
+
+            const defR = makeHumanoid(0x2563eb, 0xffffff, 0xef4444, 'defender', {
+                baseX: 2.8, baseZ: -6.5, amplitude: 1.5, speed: 1.4, phase: Math.PI
+            });
+            scene.add(defR.group);
+            characters.push(defR);
+
+            // 3. 蓝色前腰 (中圈上方: Z = -2.5，大范围横向跑动巡逻)
+            const mid = makeHumanoid(0x2563eb, 0xffffff, 0xef4444, 'midfielder', {
+                baseX: 0, baseZ: -2.5, amplitude: 2.8, speed: 1.2, phase: 1.2
+            });
+            scene.add(mid.group);
+            characters.push(mid);
+
+            // 4. 蓝色后腰/滑铲防守球员 (中圈下方: Z = 3.6，近距离防线)
+            const slider = makeHumanoid(0x2563eb, 0xffffff, 0xef4444, 'slider', {
+                baseX: 0, baseZ: 3.6, amplitude: 2.2, speed: 1.35, phase: 2.6
+            });
+            scene.add(slider.group);
+            characters.push(slider);
+        }
+
+        function makeHumanoid(jersey, shorts, boots, role, cfg = {}) {
+            const root = new THREE.Group();
+            const skinMat = new THREE.MeshStandardMaterial({ color: 0xfbcfe8 });
+            const jerseyMat = new THREE.MeshStandardMaterial({ color: jersey });
+            const shortsMat = new THREE.MeshStandardMaterial({ color: shorts });
+            const bootsMat = new THREE.MeshStandardMaterial({ color: boots });
+
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.95, 0.48), jerseyMat);
+            torso.position.y = 1.35;
+            torso.castShadow = true;
+            root.add(torso);
+
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 16), skinMat);
+            head.position.y = 0.68;
+            torso.add(head);
+            const hair = new THREE.Mesh(new THREE.SphereGeometry(0.36, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+            hair.position.y = 0.7;
+            torso.add(hair);
+
+            const lArm = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.7), skinMat);
+            lArm.position.set(-0.5, 0.15, 0);
+            torso.add(lArm);
+            const rArm = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.7), skinMat);
+            rArm.position.set(0.5, 0.15, 0);
+            torso.add(rArm);
+
+            const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.32, 0.44), shortsMat);
+            pelvis.position.y = 0.76;
+            root.add(pelvis);
+
+            const lLeg = new THREE.Group();
+            lLeg.position.set(-0.24, 0.72, 0);
+            const lt = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.11, 0.65), skinMat);
+            lt.position.y = -0.32;
+            lLeg.add(lt);
+            const lb = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, 0.4), bootsMat);
+            lb.position.set(0, -0.68, 0.08);
+            lLeg.add(lb);
+            root.add(lLeg);
+
+            const rLeg = new THREE.Group();
+            rLeg.position.set(0.24, 0.72, 0);
+            const rt = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.11, 0.65), skinMat);
+            rt.position.y = -0.32;
+            rLeg.add(rt);
+            const rb = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.16, 0.4), bootsMat);
+            rb.position.set(0, -0.68, 0.08);
+            rLeg.add(rb);
+            root.add(rLeg);
+
+            root.position.set(cfg.baseX || 0, 0, cfg.baseZ || 0);
+
+            return {
+                group: root,
+                torso, lArm, rArm, lLeg, rLeg,
+                role,
+                baseX: cfg.baseX || 0,
+                baseZ: cfg.baseZ || 0,
+                amplitude: cfg.amplitude || 0,
+                speed: cfg.speed || 1.2,
+                phase: cfg.phase || 0,
+                time: cfg.phase || 0,
+                isSliding: false,
+                kickCooldown: 0
+            };
+        }
+
+        /* ==========================================================================
+           10. 动力学物理步进（暴击 + 子弹时间 + 失败胜负闭环）
+           ========================================================================== */
+        function physicsTick(dt) {
+            let simDt = dt;
+            // 进球后的庆祝慢动作，射门冲刺过程绝不提前减速！
+            if (goalCelebrationTimer > 0) {
+                goalCelebrationTimer -= dt;
+                simDt = dt * 0.35;
+            }
+
+            const SUB_STEPS = 8;
+            const subDt = simDt / SUB_STEPS;
+
+            for (let s = 0; s < SUB_STEPS; s++) {
+                // 1. 微步高频更新双挡杆
+                updateSingleFlipper(leftFlipper, false, subDt);
+                updateSingleFlipper(rightFlipper, true, subDt);
+
+                // 2. 足球微步动力学
+                if (goalState.active) {
+                    // 进球立体球门腔体内：3D 飞行与重力自然滑落
+                    ball.vy += -18.0 * subDt;
+                    ball.y += ball.vy * subDt;
+                    if (ball.y < G.ballR) {
+                        ball.y = G.ballR;
+                        ball.vy = -ball.vy * 0.28; // 落地轻微弹跳并止步
+                        ball.vx *= (1 - 6.0 * subDt);
+                        ball.vz *= (1 - 6.0 * subDt);
+                    }
+                    ball.x += ball.vx * subDt;
+                    ball.z += ball.vz * subDt;
+
+                    // 球门内壁硬边界保护（防止极端暴击下穿透顶网或侧网飞出看台）
+                    const maxInnerX = 3.3 - G.ballR;
+                    if (ball.x < -maxInnerX) { ball.x = -maxInnerX; ball.vx = -ball.vx * 0.35; }
+                    if (ball.x > maxInnerX) { ball.x = maxInnerX; ball.vx = -ball.vx * 0.35; }
+                    if (ball.y > 2.75 - G.ballR) { ball.y = 2.75 - G.ballR; ball.vy = -ball.vy * 0.35; }
+                    if (ball.z < G.topZ - 2.2 - 0.45) { ball.z = G.topZ - 2.2 - 0.45; ball.vz = Math.max(0, -ball.vz * 0.25); }
+
+                    // 真实球网柔体碰撞与阻尼吸能
+                    const hits = topGoalNet.update(subDt, ball);
+                    if (hits > 0 && !goalState.netSoundPlayed) {
+                        goalState.netSoundPlayed = true;
+                        Sound.play('net_impact', 1.0);
+                        screenShake = Math.max(screenShake, 0.45);
+                        spawnSparks(ball.x, ball.y, ball.z, 0xffffff);
+                    }
+                } else {
+                    // 球场台面动力学：向上射门时保持充沛强劲冲量（仅微弱阻力），向下回落时全重力滑落
+                    const effectiveGravity = (ball.vz < 0) ? 1.4 : G.tableTiltGravityZ;
+                    ball.vz += effectiveGravity * subDt;
+                    ball.x += ball.vx * subDt;
+                    ball.z += ball.vz * subDt;
+                    ball.y = G.ballR;
+                    ball.vy = 0;
+
+                    // 微步空气阻力
+                    ball.vx *= (1 - 0.002 * subDt * 60);
+                    ball.vz *= (1 - 0.002 * subDt * 60);
+
+                    // 连续扫掠与反面拓扑硬投影防穿模检测（0 穿模保证）
+                    checkFlipperImpactSubstep(leftFlipper, false);
+                    checkFlipperImpactSubstep(rightFlipper, true);
+
+                    // 护栏反弹检测
+                    for (let i = 0; i < walls.length; i++) {
+                        checkWallBounce(walls[i]);
+                    }
+                }
+            }
+
+            // 平衡态网面微步衰减与进球阶段计时
+            if (!goalState.active) {
+                topGoalNet.update(simDt, ball);
+            } else {
+                goalState.timer -= dt;
+                if (goalState.timer <= 0) {
+                    goalState.active = false;
+                    topGoalNet.reset();
+                    resetBall();
+                }
+            }
+
+            ball.speed = Math.hypot(ball.vx, ball.vz);
+
+            // 击中挡杆飞出后的 1~1.5 秒破空气流与立体烟雾拖尾
+            if (ballSlipstreamTimer > 0 && !goalState.active) {
+                ballSlipstreamTimer -= simDt;
+                const ratio = Math.max(0, ballSlipstreamTimer / 1.35); // 1.0 -> 0.0
+
+                const distMoved = Math.hypot(ball.x - lastTrailX, ball.z - lastTrailZ);
+                if (distMoved >= 0.22 || ballSlipstreamTimer >= 1.30) {
+                    lastTrailX = ball.x;
+                    lastTrailZ = ball.z;
+
+                    trailVortexSide = -trailVortexSide;
+                    const speed = Math.hypot(ball.vx, ball.vz) || 1;
+                    const perpX = (-ball.vz / speed) * 0.22 * trailVortexSide;
+                    const perpZ = (ball.vx / speed) * 0.22 * trailVortexSide;
+
+                    const puffColor = ballSlipstreamCrit ? (trailVortexSide > 0 ? 0xfef08a : 0xffffff) : 0xf1f8ff;
+                    const baseOp = (ballSlipstreamCrit ? 0.85 : 0.72) * (0.35 + 0.65 * ratio);
+
+                    // 主破空气流云团
+                    spawnSmokePuff(
+                        ball.x + perpX * 0.4,
+                        0.52 + (Math.random() - 0.5) * 0.10,
+                        ball.z + perpZ * 0.4,
+                        perpX * 1.5 - ball.vx * 0.05,
+                        0.8 + Math.random() * 0.6,
+                        perpZ * 1.5 - ball.vz * 0.05,
+                        0.60,
+                        1.60 + Math.random() * 0.40,
+                        baseOp,
+                        0.46 + Math.random() * 0.14,
+                        puffColor
+                    );
+
+                    // 伴随的微细破空空气涡流羽流
+                    if (Math.random() > 0.35) {
+                        spawnSmokePuff(
+                            ball.x - perpX * 0.7,
+                            0.55,
+                            ball.z - perpZ * 0.7,
+                            -perpX * 2.0,
+                            1.1,
+                            -perpZ * 2.0,
+                            0.38,
+                            1.10,
+                            baseOp * 0.65,
+                            0.36,
+                            0xffffff
+                        );
+                    }
+                }
+            } else if (ball.speed > 22.0 && !goalState.active) {
+                spawnTrailParticle(ball.x, ball.z);
+            }
+
+            if (comboCount > 0) {
+                comboResetTimer -= simDt;
+                if (comboResetTimer <= 0) {
+                    comboCount = 0;
+                    document.getElementById('combo-badge').classList.remove('show');
+                }
+            }
+
+            if (!goalState.active) {
+                for (let i = 0; i < characters.length; i++) {
+                    updateCPUDefender(characters[i], simDt);
+                }
+            }
+
+            // 进球与漏球判定
+            if (!goalState.active) {
+                if (ball.z < G.topZ + 0.3) {
+                    if (Math.abs(ball.x) < 3.25) {
+                        // 进球！开启 1.65 秒慢动作定格与真实冲网物理
+                        goalState.active = true;
+                        goalState.timer = 1.65;
+                        goalState.netSoundPlayed = false;
+                        scoreP1++;
+                        document.getElementById('score-p1').innerText = scoreP1;
+                        triggerGoal();
+                    } else {
+                        // 出界或击中球门侧柱外侧，直接重置
+                        resetBall();
+                    }
+                } else if (ball.z > 16.0) {
+                    scoreCPU++;
+                    document.getElementById('score-cpu').innerText = scoreCPU;
+                    triggerDrain();
+                    resetBall();
+                }
+            }
+
+            ball.mesh.position.set(ball.x, ball.y, ball.z);
+            ball.mesh.rotation.x += ball.vz * simDt * 2.2;
+            ball.mesh.rotation.z -= ball.vx * simDt * 2.2;
+        }
+
+        function updateSingleFlipper(f, isRight, dt) {
+            f.targetAngle = isRight ? (keyState.right ? -G.activeAngle : -G.restAngle)
+                                    : (keyState.left ? G.activeAngle : G.restAngle);
+            const prevA = f.angle;
+            f.angle += (f.targetAngle - f.angle) * Math.min(1.0, dt * G.strikeSpeed);
+            f.omega = (f.angle - prevA) / dt;
+            f.mesh.rotation.y = -f.angle;
+        }
+
+        function checkWallBounce(w) {
+            const dx = w.x2 - w.x1;
+            const dz = w.z2 - w.z1;
+            const lenSq = dx * dx + dz * dz;
+            const t = Math.max(0, Math.min(1, ((ball.x - w.x1) * dx + (ball.z - w.z1) * dz) / lenSq));
+            const cx = w.x1 + t * dx;
+            const cz = w.z1 + t * dz;
+            const dist = Math.hypot(ball.x - cx, ball.z - cz);
+            const totalR = G.ballR + w.r;
+
+            if (dist < totalR) {
+                const nx = (ball.x - cx) / (dist || 1);
+                const nz = (ball.z - cz) / (dist || 1);
+
+                ball.x = cx + nx * totalR;
+                ball.z = cz + nz * totalR;
+
+                const dot = ball.vx * nx + ball.vz * nz;
+                if (dot < 0) {
+                    ball.vx -= 1.88 * dot * nx;
+                    ball.vz -= 1.88 * dot * nz;
+
+                    comboCount++;
+                    comboResetTimer = 2.0;
+                    Sound.playComboNote(comboCount);
+                    Sound.play('bounce', 0.7, 1.0 + Math.min(0.5, comboCount * 0.05));
+
+                    const badge = document.getElementById('combo-badge');
+                    badge.innerText = `🔥 COMBO x${comboCount}`;
+                    badge.classList.add('show');
+                }
+            }
+        }
+
+        function checkFlipperImpactSubstep(f, isRight) {
+            // 严格欧拉变换坐标：左推杆向右下，右推杆向左下；抬起时向场内上方旋转
+            const dirX = isRight ? -Math.cos(f.angle) : Math.cos(f.angle);
+            const dirZ = isRight ? -Math.sin(f.angle) : Math.sin(f.angle);
+            const tx = f.px + dirX * G.flipperL;
+            const tz = f.pz + dirZ * G.flipperL;
+
+            // 打击面朝向球场的单位法线（统一指向场内上方 -Z）
+            const nx = Math.sin(f.angle);
+            const nz = -Math.cos(f.angle);
+
+            const dx = tx - f.px;
+            const dz = tz - f.pz;
+            const lenSq = dx * dx + dz * dz;
+            const t = ((ball.x - f.px) * dx + (ball.z - f.pz) * dz) / lenSq;
+            const tClamp = Math.max(0, Math.min(1, t));
+            const cx = f.px + tClamp * dx;
+            const cz = f.pz + tClamp * dz;
+            const dist = Math.hypot(ball.x - cx, ball.z - cz);
+
+            // 球在打击面前方的带符号垂直距离（正为前方，负为穿透后方）
+            const sDist = (ball.x - cx) * nx + (ball.z - cz) * nz;
+            const hitR = G.ballR + 0.38;
+
+            // 碰撞判定：常规包围盒触碰 OR 沿杆身穿透至后方（连续防穿透双重拓扑）
+            const hasPenetrated = (t >= -0.15 && t <= 1.15 && sDist < 0.05 && dist < hitR * 1.85);
+            if (dist < hitR || hasPenetrated) {
+                // 强制将球纠偏至打击面正前方，绝不后退穿模！
+                ball.x = cx + nx * hitR;
+                ball.z = cz + nz * hitR;
+
+                const isSwingingUp = isRight ? (f.omega > 0.4) : (f.omega < -0.4);
+                if (isSwingingUp) {
+                    const isSweetSpot = t > 0.55;
+                    const boostPower = isSweetSpot ? 52.0 : 38.0;
+
+                    ball.vx = nx * (isSweetSpot ? 26.0 : 18.0) + (isRight ? -6.0 : 6.0);
+                    ball.vz = -boostPower;
+
+                    // 击中挡杆飞出的一瞬间：激活 1.35 秒破空烟雾与气流拖尾！
+                    ballSlipstreamTimer = 1.35;
+                    ballSlipstreamCrit = isSweetSpot;
+                    lastTrailX = ball.x;
+                    lastTrailZ = ball.z;
+                    spawnImpactSmokeBurst(ball.x, ball.z, nx, nz, isSweetSpot);
+
+                    screenShake = isSweetSpot ? 0.8 : 0.4;
+                    Sound.play(isSweetSpot ? 'kick_crit' : 'kick', 1.0, isSweetSpot ? 1.0 : 1.1);
+                    spawnSparks(ball.x, 0.5, ball.z, isSweetSpot ? 0xfacc15 : 0xffffff);
+
+                    if (isSweetSpot) {
+                        const crit = document.getElementById('crit-banner');
+                        crit.classList.add('show');
+                        setTimeout(() => crit.classList.remove('show'), 600);
+                    }
+                } else {
+                    const dot = ball.vx * nx + ball.vz * nz;
+                    if (dot < 0) {
+                        ball.vx -= 1.82 * dot * nx;
+                        ball.vz -= 1.82 * dot * nz;
+                        Sound.play('bounce', 0.85);
+
+                        // 强劲弹离亦激发气流拖尾
+                        if (ball.vz < -12.0) {
+                            ballSlipstreamTimer = 1.0;
+                            ballSlipstreamCrit = false;
+                            lastTrailX = ball.x;
+                            lastTrailZ = ball.z;
+                            spawnImpactSmokeBurst(ball.x, ball.z, nx, nz, false);
+                        }
+                    }
+                    if (ball.vz > -3.0) ball.vz = -3.0; // 保证弹离，不陷落
+                }
+            }
+        }
+
+        function updateCPUDefender(c, dt) {
+            c.time += dt * c.speed;
+            if (c.kickCooldown > 0) c.kickCooldown -= dt;
+            const pos = c.group.position;
+
+            if (c.role === 'top_keeper') {
+                // 门将：平时在门线中心区域热身微调，绝无磁吸吸附！
+                let targetX = c.amplitude * Math.sin(c.time * 0.8);
+
+                // 只有当足球真正朝球门飞来（射门且速度较快、进入上半场）时，门将才激活拦截扑救
+                if (ball.vz < -7.0 && ball.z < 2.0) {
+                    const timeToGoal = Math.max(0.05, (c.baseZ - ball.z) / ball.vz);
+                    const predictedX = ball.x + ball.vx * timeToGoal;
+                    // 扑救范围限制在球门内 [-2.3, 2.3]
+                    targetX = Math.max(-2.3, Math.min(2.3, predictedX));
+
+                    // 扑救张臂动作
+                    c.lArm.rotation.z = -0.8;
+                    c.rArm.rotation.z = 0.8;
+                } else {
+                    c.lArm.rotation.z = 0;
+                    c.rArm.rotation.z = 0;
+                    c.lArm.rotation.x = Math.sin(c.time * 2.0) * 0.3 - 0.2;
+                    c.rArm.rotation.x = -Math.sin(c.time * 2.0) * 0.3 - 0.2;
+                }
+
+                pos.x += (targetX - pos.x) * Math.min(1.0, dt * 5.0);
+            } 
+            else {
+                // 场上球员：严格按照桌式足球/弹珠台阵型战术自主巡逻，彻底解除磁吸！
+                // 左右自然开合，给玩家留出可预测、可瞄准的时机空档！
+                pos.x = c.baseX + c.amplitude * Math.sin(c.time);
+                pos.z = c.baseZ;
+
+                // 拟真跑步摆动动画
+                c.lLeg.rotation.x = Math.sin(c.time * 2.5) * 0.6;
+                c.rLeg.rotation.x = -Math.sin(c.time * 2.5) * 0.6;
+                c.lArm.rotation.x = -Math.sin(c.time * 2.5) * 0.5;
+                c.rArm.rotation.x = Math.sin(c.time * 2.5) * 0.5;
+
+                // 滑铲球员如果球在附近迎面冲来，触发滑铲动作
+                if (c.role === 'slider') {
+                    const d = Math.hypot(ball.x - pos.x, ball.z - pos.z);
+                    if (d < 2.4 && !c.isSliding && ball.vz < 0) {
+                        c.isSliding = true;
+                        setTimeout(() => { c.isSliding = false; }, 650);
+                    }
+                    if (c.isSliding) {
+                        c.torso.rotation.x = 0.85;
+                        c.rLeg.rotation.x = -1.35;
+                        c.lLeg.rotation.x = 0.4;
+                    } else {
+                        c.torso.rotation.x = 0;
+                    }
+                }
+            }
+
+            // 局部触球解围判定（只有当足球真实撞击在球员身体范围内才解围反弹，绝无远程吸力）
+            const dist = Math.hypot(ball.x - pos.x, ball.z - pos.z);
+            const tackleRadius = (c.role === 'top_keeper') ? (G.ballR + 0.38) : (G.ballR + 0.65);
+            if (dist < tackleRadius && c.kickCooldown <= 0) {
+                // 物理分离，避免黏连
+                const angle = Math.atan2(ball.z - pos.z, ball.x - pos.x);
+                ball.x = pos.x + Math.cos(angle) * tackleRadius;
+                ball.z = pos.z + Math.sin(angle) * tackleRadius;
+
+                // 永远向下解围（回传给玩家推杆，施加防守反击压力，绝不自摆乌龙）
+                const kickSpeed = (c.role === 'top_keeper') ? 22.0 : 16.0;
+                ball.vx = (Math.random() - 0.5) * 12.0;
+                ball.vz = kickSpeed;
+                c.kickCooldown = 0.75;
+                ballSlipstreamTimer = 0; // 防守球员成功解围后，向上破空拖尾自然终止
+
+                screenShake = 0.28;
+                Sound.play('kick', 1.0, 0.95);
+                spawnSparks(ball.x, 0.5, ball.z, 0x60a5fa);
+            }
+        }
+
+        function spawnTrailParticle(x, z) {
+            const p = new THREE.Mesh(
+                new THREE.SphereGeometry(0.18, 6, 6),
+                new THREE.MeshBasicMaterial({ color: (currentSkin === 'magma' ? 0xef4444 : 0x38bdf8), transparent: true, opacity: 0.8 })
+            );
+            p.position.set(x, 0.5, z);
+            scene.add(p);
+            ballTrailParticles.push({ mesh: p, life: 0.35 });
+        }
+
+        function spawnSparks(x, y, z, color) {
+            for (let i = 0; i < 14; i++) {
+                const sp = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.12, 6, 6),
+                    new THREE.MeshBasicMaterial({ color })
+                );
+                sp.position.set(x, y, z);
+                scene.add(sp);
+                particles.push({
+                    mesh: sp,
+                    vx: (Math.random() - 0.5) * 12,
+                    vy: Math.random() * 8 + 2,
+                    vz: (Math.random() - 0.5) * 12,
+                    life: 1.0
+                });
+            }
+        }
+
+        function updateParticles(dt) {
+            for (let i = ballTrailParticles.length - 1; i >= 0; i--) {
+                const tp = ballTrailParticles[i];
+                tp.life -= dt * 3.5;
+                tp.mesh.scale.setScalar(Math.max(0.01, tp.life * 2.0));
+                tp.mesh.material.opacity = tp.life * 2.0;
+                if (tp.life <= 0) {
+                    scene.remove(tp.mesh);
+                    ballTrailParticles.splice(i, 1);
+                }
+            }
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.life -= dt * 3.5;
+                p.mesh.position.x += p.vx * dt;
+                p.mesh.position.y += p.vy * dt;
+                p.mesh.position.z += p.vz * dt;
+                p.vy -= 16 * dt;
+                p.mesh.scale.setScalar(Math.max(0.01, p.life));
+                if (p.life <= 0) {
+                    scene.remove(p.mesh);
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function triggerGoal() {
+            screenShake = 1.0;
+            goalCelebrationTimer = 1.65;
+            Sound.play('goal', 1.0);
+            setTimeout(() => Sound.play('whistle', 0.85), 320);
+            const b = document.getElementById('goal-banner');
+            b.classList.add('show');
+            spawnSparks(0, 1.5, G.topZ, 0xfacc15);
+            triggerConfettiShower();
+            setTimeout(() => b.classList.remove('show'), 1500);
+        }
+
+        function triggerDrain() {
+            screenShake = 0.6;
+            Sound.play('drain', 1.0);
+            setTimeout(() => Sound.play('whistle', 0.65), 280);
+            const b = document.getElementById('drain-banner');
+            b.classList.add('show');
+            setTimeout(() => b.classList.remove('show'), 1200);
+        }
+
+        /* ==========================================================================
+           11. 交互与控制
+           ========================================================================== */
+        function setupControls() {
+            window.addEventListener('keydown', e => {
+                if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') {
+                    if (!keyState.left) Sound.play('flipper', 0.8);
+                    keyState.left = true;
+                }
+                if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') {
+                    if (!keyState.right) Sound.play('flipper', 0.8);
+                    keyState.right = true;
+                }
+                if (e.code === 'Space') resetBall();
+                if (e.key === 'g' || e.key === 'G') {
+                    // G 键：直接触发向球门内爆射物理测试
+                    ball.x = (Math.random() - 0.5) * 1.2;
+                    ball.y = 1.2;
+                    ball.z = -7.5;
+                    ball.vx = (Math.random() - 0.5) * 4.0;
+                    ball.vy = 2.2;
+                    ball.vz = -28.0;
+                    ballSlipstreamTimer = 1.35;
+                    ballSlipstreamCrit = true;
+                    Sound.play('kick_crit', 1.0);
+                }
+                if (e.key === 'c' || e.key === 'C' || e.key === 'p' || e.key === 'P') {
+                    setPitchStyle(currentPitchStyleIdx + 1);
+                }
+            });
+
+            window.addEventListener('keyup', e => {
+                if (e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') keyState.left = false;
+                if (e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') keyState.right = false;
+            });
+
+            const tLeft = document.getElementById('touch-left');
+            const tRight = document.getElementById('touch-right');
+
+            tLeft.addEventListener('pointerdown', () => { Sound.play('flipper', 0.8); keyState.left = true; });
+            tLeft.addEventListener('pointerup', () => { keyState.left = false; });
+            tLeft.addEventListener('pointercancel', () => { keyState.left = false; });
+
+            tRight.addEventListener('pointerdown', () => { Sound.play('flipper', 0.8); keyState.right = true; });
+            tRight.addEventListener('pointerup', () => { keyState.right = false; });
+            tRight.addEventListener('pointercancel', () => { keyState.right = false; });
+
+            document.getElementById('btn-reset').addEventListener('click', resetBall);
+            document.getElementById('btn-sound').addEventListener('click', () => {
+                Sound.enabled = !Sound.enabled;
+                document.getElementById('btn-sound').innerText = Sound.enabled ? '🔊' : '🔇';
+            });
+            const btnPitch = document.getElementById('btn-pitch');
+            if (btnPitch) {
+                btnPitch.innerText = PITCH_STYLES[currentPitchStyleIdx].icon;
+                btnPitch.title = `切换草坪 (当前: ${PITCH_STYLES[currentPitchStyleIdx].name})`;
+                btnPitch.addEventListener('click', () => {
+                    setPitchStyle(currentPitchStyleIdx + 1);
+                });
+            }
+            document.getElementById('btn-skin').addEventListener('click', () => {
+                if (currentSkin === 'classic') {
+                    currentSkin = 'magma';
+                    if (textures.magma) {
+                        ball.mesh.material.map = textures.magma;
+                        ball.mesh.material.needsUpdate = true;
+                    }
+                } else {
+                    currentSkin = 'classic';
+                    if (textures.classic) {
+                        ball.mesh.material.map = textures.classic;
+                        ball.mesh.material.needsUpdate = true;
+                    }
+                }
+            });
+
+            document.getElementById('btn-cover').addEventListener('click', () => {
+                document.getElementById('modal-cover').classList.add('active');
+            });
+            document.getElementById('btn-share').addEventListener('click', () => {
+                document.getElementById('modal-share').classList.add('active');
+            });
+        }
+
+        window.closeModals = function() {
+            document.getElementById('modal-cover').classList.remove('active');
+            document.getElementById('modal-share').classList.remove('active');
+        };
+
+        /* ==========================================================================
+           12. 渲染循环与相机物理微震
+           ========================================================================== */
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = Math.min(clock.getDelta(), 0.033);
+
+            physicsTick(dt);
+            updateParticles(dt);
+            updateSmokeSystem(dt);
+            updateStadiumAtmosphere(dt);
+            updateStadiumCrowd(dt, clock.getElapsedTime());
+
+            if (screenShake > 0.01) {
+                camera.position.x = baseCamPos.x + (Math.random() - 0.5) * screenShake * 0.8;
+                camera.position.z = baseCamPos.z + (Math.random() - 0.5) * screenShake * 0.8;
+                screenShake *= 0.88;
+            } else {
+                camera.position.copy(baseCamPos);
+            }
+
+            if (bulletTimeTimer > 0) {
+                camera.position.y += (42.0 - camera.position.y) * dt * 4.0;
+                camera.position.z += (5.0 - camera.position.z) * dt * 4.0;
+            }
+
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
