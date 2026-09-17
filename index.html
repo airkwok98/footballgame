@@ -285,6 +285,25 @@
             transform: scale(1.1);
         }
 
+        @media (max-width: 640px) {
+            #tournament-header {
+                top: 44px;
+            }
+            #mini-tools {
+                top: 8px;
+                right: 8px;
+                gap: 4px;
+            }
+            .tool-btn {
+                width: 28px;
+                height: 28px;
+                font-size: 12px;
+            }
+            #pitch-toast {
+                top: 88px;
+            }
+        }
+
         /* 全屏透明触控 */
         #touch-left, #touch-right {
             position: absolute;
@@ -713,19 +732,19 @@
         let currentCameraMode = '3d'; // '3d' | 'top'
         const CAM_CONFIGS = {
             '3d': {
-                mobile: { pos: new THREE.Vector3(0, 31.0, 26.5), target: new THREE.Vector3(0, 0.5, -1.5), fov: 53 },
-                desktop: { pos: new THREE.Vector3(0, 26.5, 23.0), target: new THREE.Vector3(0, 0.5, -1.8), fov: 48 }
+                mobile: { pos: new THREE.Vector3(0, 36.0, 27.5), target: new THREE.Vector3(0, 0.2, 1.8), fov: 58 },
+                desktop: { pos: new THREE.Vector3(0, 33.0, 23.5), target: new THREE.Vector3(0, 0.2, 2.0), fov: 52 }
             },
             'top': {
-                mobile: { pos: new THREE.Vector3(0, 54.0, 14.5), target: new THREE.Vector3(0, 0, 0), fov: 46 },
-                desktop: { pos: new THREE.Vector3(0, 46.0, 11.0), target: new THREE.Vector3(0, 0, 0), fov: 44 }
+                mobile: { pos: new THREE.Vector3(0, 56.0, 13.0), target: new THREE.Vector3(0, 0, 1.5), fov: 48 },
+                desktop: { pos: new THREE.Vector3(0, 48.0, 9.5), target: new THREE.Vector3(0, 0, 1.5), fov: 44 }
             }
         };
-        let targetCamPos = new THREE.Vector3(0, 26.5, 23.0);
-        let targetCamLook = new THREE.Vector3(0, 0.5, -1.8);
-        let currentCamPos = new THREE.Vector3(0, 26.5, 23.0);
-        let currentCamLook = new THREE.Vector3(0, 0.5, -1.8);
-        let baseCamPos = new THREE.Vector3(0, 26.5, 23.0);
+        let targetCamPos = new THREE.Vector3(0, 33.0, 23.5);
+        let targetCamLook = new THREE.Vector3(0, 0.2, 2.0);
+        let currentCamPos = new THREE.Vector3(0, 33.0, 23.5);
+        let currentCamLook = new THREE.Vector3(0, 0.2, 2.0);
+        let baseCamPos = new THREE.Vector3(0, 33.0, 23.5);
         let towerSpotLights = [];
         let volumetricCones = [];
 
