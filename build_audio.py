@@ -89,6 +89,21 @@ def build_all_audio():
     sig_net_i16 = (sig_net * 32767).astype(np.int16)
     wavfile.write(dst_net, sr, np.column_stack([sig_net_i16, sig_net_i16]))
 
+    # 9. header.wav (真实头骨迎顶足球沉闷低频撞击与皮革爆破音)
+    dst_header = os.path.join(out_dir, 'header.wav')
+    dur_h = 0.36
+    t_h = np.linspace(0, dur_h, int(sr * dur_h), endpoint=False)
+    f_core = 135.0 * np.exp(-12.0 * t_h) + 62.0
+    core_h = np.sin(2 * np.pi * f_core * t_h) * np.exp(-13.0 * t_h) * 0.75
+    f_slap = 480.0 * np.exp(-35.0 * t_h) + 160.0
+    slap_h = np.sin(2 * np.pi * f_slap * t_h) * np.exp(-32.0 * t_h) * 0.45
+    res_h = np.sin(2 * np.pi * 175.0 * t_h) * np.exp(-18.0 * t_h) * 0.35
+    noise_h = np.random.normal(0, 0.18, len(t_h)) * np.exp(-22.0 * t_h)
+    sig_header = core_h + slap_h + res_h + noise_h
+    sig_header = np.clip(sig_header, -0.98, 0.98)
+    sig_header_i16 = (sig_header * 32767).astype(np.int16)
+    wavfile.write(dst_header, sr, np.column_stack([sig_header_i16, sig_header_i16]))
+
     print("All audio files built successfully!")
 
 if __name__ == '__main__':

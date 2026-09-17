@@ -123,6 +123,35 @@
             transform: translate(-50%, -50%) scale(1.1);
         }
 
+        /* 球员动作动态高光呼号 (头球冲顶 / 大力抽射 / 角球传中) */
+        #action-badge {
+            position: absolute;
+            top: 32%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.7);
+            font-size: 16px;
+            font-weight: 900;
+            font-style: italic;
+            color: #ffffff;
+            text-shadow: 0 0 16px rgba(56, 189, 248, 0.9), 0 2px 8px rgba(0,0,0,0.8);
+            letter-spacing: 1.5px;
+            background: rgba(15, 23, 42, 0.92);
+            border: 1.5px solid rgba(56, 189, 248, 0.6);
+            padding: 5px 20px;
+            border-radius: 999px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(8px);
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+            z-index: 24;
+            white-space: nowrap;
+        }
+        #action-badge.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1.05);
+        }
+
         /* 进球与失误横幅 */
         #goal-banner {
             position: absolute;
@@ -290,6 +319,7 @@
         <!-- 连击提示 (移到左上角) -->
         <div id="combo-badge">🔥 COMBO x2</div>
         <div id="crit-banner">ROCKET SHOT! 🚀💥</div>
+        <div id="action-badge">⚽ 跃起头球冲顶!</div>
         <div id="goal-banner">GOOOAL! ⚽🎉</div>
         <div id="drain-banner">DRAINED! 💔 漏球丢分</div>
         <div id="pitch-toast">🌿 经典斑马横条纹</div>
@@ -354,6 +384,7 @@
                 this.load('goal', 'assets/audio/goal.wav');
                 this.load('drain', 'assets/audio/drain.wav');
                 this.load('net_impact', 'assets/audio/net_impact.wav');
+                this.load('header', 'assets/audio/header.wav');
             },
             load(key, url) {
                 if (this.buffers[key] || !this.audioCtx) return;
@@ -447,6 +478,12 @@
                     osc.frequency.exponentialRampToValueAtTime(34, now + 0.35);
                     gain.gain.setValueAtTime(0.75 * vol, now);
                     gain.gain.exponentialRampToValueAtTime(0.01, now + 0.38);
+                } else if (key === 'header') {
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(140 * pitchRate, now);
+                    osc.frequency.exponentialRampToValueAtTime(55, now + 0.16);
+                    gain.gain.setValueAtTime(0.70 * vol, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.18);
                 } else {
                     osc.type = 'sine';
                     osc.frequency.setValueAtTime(160 * pitchRate, now);
@@ -945,6 +982,37 @@
                         spawnSparks(0, 1.5, G.topZ, 0xfacc15);
                         triggerConfettiShower();
                     }, 200);
+                } else if (testParam === 'header') {
+                    setTimeout(() => {
+                        const target = characters.find(c => c.role === 'midfielder') || characters[1];
+                        target.actionType = 'header';
+                        target.actionDuration = 0.65;
+                        target.actionTimer = 0.65;
+                        ball.x = target.group.position.x;
+                        ball.z = target.group.position.z + 0.35;
+                        ball.y = 1.95;
+                        ball.vx = 0.5;
+                        ball.vy = 4.8;
+                        ball.vz = 16.5;
+                        showActionBadge('⚽ 跃起头球冲顶!', '#38bdf8');
+                        spawnHeaderAirburst(ball.x, 1.9, ball.z);
+                    }, 250);
+                } else if (testParam === 'kick') {
+                    setTimeout(() => {
+                        const target = characters.find(c => c.role === 'defender') || characters[1];
+                        target.actionType = 'kick_right';
+                        target.actionDuration = 0.65;
+                        target.actionTimer = 0.65;
+                        ball.x = target.group.position.x + 0.25;
+                        ball.z = target.group.position.z + 0.35;
+                        ball.y = G.ballR;
+                        ball.vx = 0.8;
+                        ball.vy = 0.6;
+                        ball.vz = 18.0;
+                        showActionBadge('⚡ 右脚外脚背抽射!', '#4ade80');
+                        spawnTurfBits(ball.x, 0.2, ball.z, 0x86efac);
+                        spawnSparks(ball.x, 0.4, ball.z, 0xffffff);
+                    }, 250);
                 }
 
                 setInterval(() => {
@@ -2255,12 +2323,17 @@
             torso.castShadow = true;
             root.add(torso);
 
+            const headGroup = new THREE.Group();
+            headGroup.position.y = 0.68;
+            torso.add(headGroup);
+
             const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 16), skinMat);
-            head.position.y = 0.68;
-            torso.add(head);
+            head.castShadow = true;
+            headGroup.add(head);
             const hair = new THREE.Mesh(new THREE.SphereGeometry(0.36, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
-            hair.position.y = 0.7;
-            torso.add(hair);
+            hair.position.y = 0.02;
+            hair.castShadow = true;
+            headGroup.add(hair);
 
             const lArm = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.7), skinMat);
             lArm.position.set(-0.5, 0.15, 0);
@@ -2297,7 +2370,7 @@
 
             return {
                 group: root,
-                torso, lArm, rArm, lLeg, rLeg,
+                torso, head: headGroup, lArm, rArm, lLeg, rLeg,
                 role,
                 baseX: cfg.baseX || 0,
                 baseZ: cfg.baseZ || 0,
@@ -2306,7 +2379,10 @@
                 phase: cfg.phase || 0,
                 time: cfg.phase || 0,
                 isSliding: false,
-                kickCooldown: 0
+                kickCooldown: 0,
+                actionType: 'none', // 'none' | 'header' | 'kick_right' | 'kick_left'
+                actionTimer: 0,
+                actionDuration: 0.45
             };
         }
 
@@ -2364,8 +2440,25 @@
                     ball.vz += effectiveGravity * subDt;
                     ball.x += ball.vx * subDt;
                     ball.z += ball.vz * subDt;
-                    ball.y = G.ballR;
-                    ball.vy = 0;
+
+                    // 真实 3D 纵向高空与草坪弹跳动力学（支持高空冲顶头球、角球传中与落地弹性反弹）
+                    if (ball.y > G.ballR || ball.vy !== 0) {
+                        ball.vy -= 26.0 * subDt; // 真实引力加速度
+                        ball.y += ball.vy * subDt;
+                        if (ball.y <= G.ballR) {
+                            ball.y = G.ballR;
+                            if (Math.abs(ball.vy) > 1.8) {
+                                ball.vy = -ball.vy * 0.32; // 真实草坪弹性与草地阻尼
+                                Sound.play('bounce', Math.min(0.65, Math.abs(ball.vy) * 0.09));
+                                spawnTurfBits(ball.x, ball.y, ball.z, 0x86efac);
+                            } else {
+                                ball.vy = 0;
+                            }
+                        }
+                    } else {
+                        ball.y = G.ballR;
+                        ball.vy = 0;
+                    }
 
                     // 微步空气阻力
                     ball.vx *= (1 - 0.002 * subDt * 60);
@@ -2611,6 +2704,61 @@
             }
         }
 
+        let actionBadgeTimeout = null;
+        function showActionBadge(text, color = '#38bdf8') {
+            const badge = document.getElementById('action-badge');
+            if (!badge) return;
+            badge.innerText = text;
+            badge.style.borderColor = color;
+            badge.style.textShadow = `0 0 16px ${color}, 0 2px 8px rgba(0,0,0,0.8)`;
+            badge.classList.add('show');
+            if (actionBadgeTimeout) clearTimeout(actionBadgeTimeout);
+            actionBadgeTimeout = setTimeout(() => {
+                badge.classList.remove('show');
+            }, 680);
+        }
+
+        function spawnTurfBits(x, y, z, color = 0x86efac) {
+            for (let i = 0; i < 9; i++) {
+                const sp = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.08, 0.08, 0.08),
+                    new THREE.MeshBasicMaterial({ color })
+                );
+                sp.position.set(x + (Math.random() - 0.5) * 0.2, y + 0.05, z + (Math.random() - 0.5) * 0.2);
+                scene.add(sp);
+                particles.push({
+                    mesh: sp,
+                    vx: (Math.random() - 0.5) * 8.0,
+                    vy: Math.random() * 5.0 + 2.0,
+                    vz: (Math.random() - 0.5) * 8.0,
+                    life: 0.65
+                });
+            }
+        }
+
+        function spawnHeaderAirburst(x, y, z) {
+            // 头部高空破空白色气浪环与光晕
+            for (let i = 0; i < 6; i++) {
+                const ang = (i / 6) * Math.PI * 2;
+                const spx = Math.cos(ang) * 1.8;
+                const spz = Math.sin(ang) * 1.8;
+                spawnSmokePuff(
+                    x + Math.cos(ang) * 0.25,
+                    y,
+                    z + Math.sin(ang) * 0.25,
+                    spx,
+                    0.5 + Math.random() * 0.5,
+                    spz,
+                    0.35,
+                    1.15,
+                    0.75,
+                    0.38,
+                    0xffffff
+                );
+            }
+            spawnSparks(x, y, z, 0xfef08a);
+        }
+
         function updateCPUDefender(c, dt) {
             c.time += dt * c.speed;
             if (c.kickCooldown > 0) c.kickCooldown -= dt;
@@ -2645,48 +2793,199 @@
                 pos.x = c.baseX + c.amplitude * Math.sin(c.time);
                 pos.z = c.baseZ;
 
-                // 拟真跑步摆动动画
-                c.lLeg.rotation.x = Math.sin(c.time * 2.5) * 0.6;
-                c.rLeg.rotation.x = -Math.sin(c.time * 2.5) * 0.6;
-                c.lArm.rotation.x = -Math.sin(c.time * 2.5) * 0.5;
-                c.rArm.rotation.x = Math.sin(c.time * 2.5) * 0.5;
+                // 动作状态机检测 (头球跃顶 / 摆腿抽射)
+                if (c.actionTimer > 0) {
+                    c.actionTimer -= dt;
+                    const progress = Math.max(0, Math.min(1.0, 1.0 - (c.actionTimer / c.actionDuration)));
 
-                // 滑铲球员如果球在附近迎面冲来，触发滑铲动作
-                if (c.role === 'slider') {
-                    const d = Math.hypot(ball.x - pos.x, ball.z - pos.z);
-                    if (d < 2.4 && !c.isSliding && ball.vz < 0) {
-                        c.isSliding = true;
-                        setTimeout(() => { c.isSliding = false; }, 650);
+                    if (c.actionType === 'header') {
+                        // 1. 头球动作：拔地起跳、挺胸、甩头冲顶
+                        // 起跳抛物线高度：最高达 0.72 米
+                        pos.y = Math.sin(progress * Math.PI) * 0.72;
+
+                        if (progress < 0.30) {
+                            // 准备蓄力期：身体向后微仰，头部微抬，双臂预展
+                            const p0 = progress / 0.30;
+                            c.torso.rotation.x = 0.25 * p0;
+                            if (c.head) c.head.rotation.x = 0.20 * p0;
+                            c.lArm.rotation.z = -0.5 * p0;
+                            c.rArm.rotation.z = 0.5 * p0;
+                            c.lLeg.rotation.x = 0.3 * p0;
+                            c.rLeg.rotation.x = 0.35 * p0;
+                        } else {
+                            // 爆发冲顶期：躯干与头部猛烈向前扣杀发力！
+                            const p1 = (progress - 0.30) / 0.70;
+                            const snap = Math.sin(p1 * Math.PI * 0.95);
+                            c.torso.rotation.x = -0.58 * snap;
+                            if (c.head) c.head.rotation.x = -0.68 * snap;
+                            // 双臂张开滞空平衡
+                            c.lArm.rotation.z = -0.75 * Math.sin(p1 * Math.PI);
+                            c.rArm.rotation.z = 0.75 * Math.sin(p1 * Math.PI);
+                            c.lArm.rotation.x = -0.35 * snap;
+                            c.rArm.rotation.x = -0.35 * snap;
+                            // 双腿屈膝腾空
+                            c.lLeg.rotation.x = 0.45 * Math.sin(p1 * Math.PI);
+                            c.rLeg.rotation.x = 0.50 * Math.sin(p1 * Math.PI);
+                        }
+                    } else if (c.actionType === 'kick_right' || c.actionType === 'kick_left') {
+                        // 2. 抽射动作：摆腿抽击、身体后仰、对角摆臂
+                        const isRight = (c.actionType === 'kick_right');
+                        const kickLeg = isRight ? c.rLeg : c.lLeg;
+                        const plantLeg = isRight ? c.lLeg : c.rLeg;
+                        const kickArm = isRight ? c.lArm : c.rArm;
+                        const plantArm = isRight ? c.rArm : c.lArm;
+
+                        // 抽射瞬间有微幅垫步支撑起伏
+                        pos.y = Math.sin(progress * Math.PI) * 0.12;
+
+                        if (progress < 0.28) {
+                            // 后摆引腿蓄力
+                            const p0 = progress / 0.28;
+                            kickLeg.rotation.x = -1.15 * p0;
+                            plantLeg.rotation.x = -0.25 * p0;
+                            c.torso.rotation.x = 0.28 * p0;
+                            c.torso.rotation.y = (isRight ? -0.22 : 0.22) * p0;
+                            if (c.head) c.head.rotation.x = 0.20 * p0;
+                            kickArm.rotation.x = 0.85 * p0;
+                            plantArm.rotation.x = -0.85 * p0;
+                        } else {
+                            // 强劲鞭打向前抽击贯穿
+                            const p1 = (progress - 0.28) / 0.72;
+                            const snap = Math.sin(p1 * Math.PI * 0.9);
+                            kickLeg.rotation.x = -1.15 + (1.15 + 1.25) * snap;
+                            plantLeg.rotation.x = -0.25 * (1 - p1);
+                            c.torso.rotation.x = 0.32 * Math.sin(p1 * Math.PI);
+                            c.torso.rotation.y = (isRight ? -0.22 : 0.22) * (1 - p1);
+                            if (c.head) c.head.rotation.x = 0.20 * (1 - p1);
+                            kickArm.rotation.x = 0.85 * (1 - p1 * 1.5);
+                            plantArm.rotation.x = -0.85 * (1 - p1 * 1.5);
+                        }
                     }
-                    if (c.isSliding) {
-                        c.torso.rotation.x = 0.85;
-                        c.rLeg.rotation.x = -1.35;
-                        c.lLeg.rotation.x = 0.4;
-                    } else {
-                        c.torso.rotation.x = 0;
+
+                    if (c.actionTimer <= 0) {
+                        c.actionType = 'none';
+                        pos.y = 0;
+                        c.torso.rotation.set(0, 0, 0);
+                        if (c.head) c.head.rotation.set(0, 0, 0);
+                        c.lArm.rotation.set(0, 0, 0);
+                        c.rArm.rotation.set(0, 0, 0);
+                        c.lLeg.rotation.set(0, 0, 0);
+                        c.rLeg.rotation.set(0, 0, 0);
+                    }
+                } else {
+                    // 常规巡逻跑步摆动动画
+                    pos.y = 0;
+                    c.torso.rotation.set(0, 0, 0);
+                    if (c.head) c.head.rotation.set(0, 0, 0);
+                    c.lArm.rotation.z = 0;
+                    c.rArm.rotation.z = 0;
+                    c.lLeg.rotation.x = Math.sin(c.time * 2.5) * 0.6;
+                    c.rLeg.rotation.x = -Math.sin(c.time * 2.5) * 0.6;
+                    c.lArm.rotation.x = -Math.sin(c.time * 2.5) * 0.5;
+                    c.rArm.rotation.x = Math.sin(c.time * 2.5) * 0.5;
+
+                    // 滑铲球员如果球在附近迎面冲来，触发滑铲动作
+                    if (c.role === 'slider') {
+                        const d = Math.hypot(ball.x - pos.x, ball.z - pos.z);
+                        if (d < 2.4 && !c.isSliding && ball.vz < 0) {
+                            c.isSliding = true;
+                            setTimeout(() => { c.isSliding = false; }, 650);
+                        }
+                        if (c.isSliding) {
+                            c.torso.rotation.x = 0.85;
+                            c.rLeg.rotation.x = -1.35;
+                            c.lLeg.rotation.x = 0.4;
+                        }
                     }
                 }
             }
 
             // 局部触球解围判定（只有当足球真实撞击在球员身体范围内才解围反弹，绝无远程吸力）
             const dist = Math.hypot(ball.x - pos.x, ball.z - pos.z);
-            const tackleRadius = (c.role === 'top_keeper') ? (G.ballR + 0.38) : (G.ballR + 0.65);
+            const tackleRadius = (c.role === 'top_keeper') ? (G.ballR + 0.38) : (G.ballR + 0.68);
             if (dist < tackleRadius && c.kickCooldown <= 0) {
                 // 物理分离，避免黏连
                 const angle = Math.atan2(ball.z - pos.z, ball.x - pos.x);
                 ball.x = pos.x + Math.cos(angle) * tackleRadius;
                 ball.z = pos.z + Math.sin(angle) * tackleRadius;
 
-                // 永远向下解围（回传给玩家推杆，施加防守反击压力，绝不自摆乌龙）
-                const kickSpeed = (c.role === 'top_keeper') ? 22.0 : 16.0;
-                ball.vx = (Math.random() - 0.5) * 12.0;
-                ball.vz = kickSpeed;
-                c.kickCooldown = 0.75;
-                ballSlipstreamTimer = 0; // 防守球员成功解围后，向上破空拖尾自然终止
+                if (c.role === 'top_keeper') {
+                    // 门将扑救解围
+                    const kickSpeed = 22.0;
+                    ball.vx = (Math.random() - 0.5) * 12.0;
+                    ball.vz = kickSpeed;
+                    c.kickCooldown = 0.75;
+                    ballSlipstreamTimer = 0;
+                    screenShake = 0.28;
+                    Sound.play('kick', 1.0, 0.95);
+                    spawnSparks(ball.x, 0.5, ball.z, 0x60a5fa);
+                } else {
+                    // 场上球员：随机 50% 头球 vs 50% 脚踢（高空来球优先头球争顶！）
+                    const isHighBall = (ball.y > 0.65);
+                    const isHeader = isHighBall ? (Math.random() < 0.82) : (Math.random() < 0.50);
 
-                screenShake = 0.28;
-                Sound.play('kick', 1.0, 0.95);
-                spawnSparks(ball.x, 0.5, ball.z, 0x60a5fa);
+                    if (isHeader) {
+                        // 触发拟真跃起甩头冲顶
+                        c.actionType = 'header';
+                        c.actionDuration = 0.48;
+                        c.actionTimer = 0.48;
+                        c.kickCooldown = 0.70;
+
+                        // 35% 几率头球战术摆渡传给队友，65% 强力冲顶高空弧线解围！
+                        let passedToTeammate = false;
+                        if (Math.random() < 0.35) {
+                            const mates = characters.filter(m => m !== c && m.role !== 'top_keeper');
+                            if (mates.length > 0) {
+                                const targetMate = mates[Math.floor(Math.random() * mates.length)];
+                                const tPos = targetMate.group.position;
+                                const dx = tPos.x - ball.x;
+                                const dz = tPos.z - ball.z;
+                                const tDist = Math.hypot(dx, dz);
+                                if (tDist > 1.5 && tDist < 9.0) {
+                                    passedToTeammate = true;
+                                    const flightTime = tDist / 13.0;
+                                    ball.vx = dx / flightTime;
+                                    ball.vz = dz / flightTime;
+                                    ball.vy = 4.8 + Math.random() * 1.5; // 优美高空传递弧线
+                                    showActionBadge('⚽ 头球战术摆渡!', '#facc15');
+                                }
+                            }
+                        }
+
+                        if (!passedToTeammate) {
+                            // 强力高空冲顶解围（球高高跃起，朝玩家下方回落）
+                            ball.vx = (Math.random() - 0.5) * 11.0;
+                            ball.vz = 16.5 + Math.random() * 3.5;
+                            ball.vy = 5.2 + Math.random() * 2.0; // 强力腾空弧线
+                            showActionBadge('⚽ 跃起头球冲顶!', '#38bdf8');
+                        }
+
+                        screenShake = 0.35;
+                        Sound.play('header', 1.05, 1.0);
+                        spawnHeaderAirburst(pos.x, 1.9, pos.z);
+                    } else {
+                        // 触发脚踢抽射 / 外脚背推射
+                        const isRightFoot = (ball.x >= pos.x) ? (Math.random() < 0.8) : (Math.random() < 0.2);
+                        c.actionType = isRightFoot ? 'kick_right' : 'kick_left';
+                        c.actionDuration = 0.42;
+                        c.actionTimer = 0.42;
+                        c.kickCooldown = 0.65;
+
+                        // 贴地暴力抽射
+                        const kickSpeed = 17.5 + Math.random() * 4.0;
+                        ball.vx = (Math.random() - 0.5) * 12.0;
+                        ball.vz = kickSpeed;
+                        ball.vy = 0.6 + Math.random() * 0.8; // 贴地疾射
+
+                        showActionBadge(isRightFoot ? '⚡ 右脚外脚背抽射!' : '⚡ 左脚凌空推击!', '#4ade80');
+                        screenShake = 0.32;
+                        Sound.play('kick', 1.1, 1.15);
+                        spawnTurfBits(ball.x, 0.2, ball.z, 0x86efac);
+                        spawnSparks(ball.x, 0.4, ball.z, 0xffffff);
+                    }
+
+                    ballSlipstreamTimer = 0;
+                }
             }
         }
 
@@ -2791,7 +3090,44 @@
                     ballSlipstreamCrit = true;
                     Sound.play('kick_crit', 1.0);
                 }
-                if (e.key === 'c' || e.key === 'C' || e.key === 'p' || e.key === 'P') {
+                if (e.key === 'h' || e.key === 'H') {
+                    // H 键：高空传中喂球，测试球员拔地跃起头球冲顶争顶！
+                    const targets = characters.filter(c => c.role !== 'top_keeper');
+                    const target = targets[Math.floor(Math.random() * targets.length)];
+                    ball.x = target.group.position.x + (Math.random() - 0.5) * 0.3;
+                    ball.z = target.group.position.z + 1.2;
+                    ball.y = 2.5;
+                    ball.vx = (Math.random() - 0.5) * 1.5;
+                    ball.vy = -1.2;
+                    ball.vz = -10.0;
+                    showActionBadge('🎯 高空传中 ➔ 头球争顶测试', '#38bdf8');
+                }
+                if (e.key === 'k' || e.key === 'K') {
+                    // K 键：贴地快球喂球，测试球员外脚背抽射！
+                    const targets = characters.filter(c => c.role !== 'top_keeper');
+                    const target = targets[Math.floor(Math.random() * targets.length)];
+                    ball.x = target.group.position.x + (Math.random() - 0.5) * 0.3;
+                    ball.z = target.group.position.z + 1.6;
+                    ball.y = G.ballR;
+                    ball.vx = (Math.random() - 0.5) * 2.0;
+                    ball.vy = 0;
+                    ball.vz = -12.0;
+                    showActionBadge('🎯 地面直塞 ➔ 摆腿抽射测试', '#4ade80');
+                }
+                if (e.key === 'c' || e.key === 'C' || e.key === 'j' || e.key === 'J') {
+                    // C / J 键：角球弧线高空传中 (Corner Kick Cross)
+                    const isRightCorner = Math.random() > 0.5;
+                    ball.x = isRightCorner ? 5.2 : -5.2;
+                    ball.z = -10.5;
+                    ball.y = 0.5;
+                    ball.vx = isRightCorner ? -11.0 : 11.0;
+                    ball.vy = 8.5; // 高空挑起
+                    ball.vz = 8.0;  // 旋向禁区点球点附近
+                    showActionBadge('🚩 角球弧线高空传中!', '#facc15');
+                    Sound.play('kick', 1.0, 1.2);
+                    spawnHeaderAirburst(ball.x, 0.6, ball.z);
+                }
+                if (e.key === 'p' || e.key === 'P') {
                     setPitchStyle(currentPitchStyleIdx + 1);
                 }
             });
