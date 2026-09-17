@@ -33,21 +33,64 @@
             height: 100%;
         }
         
-        /* 顶部紧凑超薄记分牌（移至最顶端，严禁遮挡下方球门） */
-        #scoreboard {
+        /* 顶部晋级赛记分头栏（紧凑居中，严密避开球门视线） */
+        #tournament-header {
             position: absolute;
-            top: 8px;
+            top: 6px;
             left: 50%;
             transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            z-index: 10;
+            pointer-events: none;
+        }
+        #stage-banner-tag {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(15, 23, 42, 0.90);
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            border-radius: 999px;
+            padding: 2px 10px;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            pointer-events: auto;
+        }
+        #stage-badge {
+            font-size: 10px;
+            font-weight: 800;
+            color: #38bdf8;
+            letter-spacing: 0.5px;
+        }
+        .stage-divider {
+            color: #475569;
+            font-size: 10px;
+        }
+        #btn-target {
+            background: transparent;
+            border: none;
+            color: #facc15;
+            font-size: 10px;
+            font-weight: 800;
+            cursor: pointer;
+            padding: 0;
+            transition: color 0.15s ease;
+        }
+        #btn-target:hover {
+            color: #fde047;
+            text-decoration: underline;
+        }
+        #scoreboard {
             display: flex;
             align-items: center;
             background: rgba(15, 23, 42, 0.92);
             border: 1.5px solid rgba(255, 255, 255, 0.15);
             border-radius: 8px;
-            padding: 3px 18px;
+            padding: 2px 16px;
             box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
             backdrop-filter: blur(8px);
-            z-index: 10;
             pointer-events: none;
         }
         .team-box {
@@ -75,6 +118,27 @@
             font-weight: bold;
             color: #475569;
             margin: 0 10px;
+        }
+        .target-opt-btn {
+            background: rgba(30, 41, 59, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #e2e8f0;
+            border-radius: 8px;
+            padding: 9px 6px;
+            font-size: 11px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .target-opt-btn:hover {
+            border-color: #38bdf8;
+            color: #38bdf8;
+        }
+        .target-opt-btn.active {
+            background: rgba(37, 99, 235, 0.35);
+            border-color: #38bdf8;
+            color: #38bdf8;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.3);
         }
 
         /* 连击 Combo 移至左上角，彻底移出球门中心视线 */
@@ -274,16 +338,23 @@
 </head>
 <body>
     <div id="game-container">
-        <!-- 紧凑不遮挡记分牌 -->
-        <div id="scoreboard">
-            <div class="team-box">
-                <span class="team-name">P1 玩家</span>
-                <span class="team-score" id="score-p1">2</span>
+        <!-- 顶部紧凑晋级赛记分牌与晋级目标 -->
+        <div id="tournament-header">
+            <div id="stage-banner-tag">
+                <span id="stage-badge">🏅 第 1 轮 · 选拔初赛 (4人)</span>
+                <span class="stage-divider">|</span>
+                <button id="btn-target" title="点击更改晋级目标比分">🎯 先得 <span id="target-goals-num">3</span> 球晋级 ▾</button>
             </div>
-            <div class="score-divider">:</div>
-            <div class="team-box">
-                <span class="team-name">CPU 电脑</span>
-                <span class="team-score" id="score-cpu">0</span>
+            <div id="scoreboard">
+                <div class="team-box">
+                    <span class="team-name">P1 玩家</span>
+                    <span class="team-score" id="score-p1">0</span>
+                </div>
+                <div class="score-divider">:</div>
+                <div class="team-box">
+                    <span class="team-name">CPU 电脑</span>
+                    <span class="team-score" id="score-cpu">0</span>
+                </div>
             </div>
         </div>
 
@@ -306,6 +377,64 @@
 
         <div id="touch-left"></div>
         <div id="touch-right"></div>
+
+        <!-- 晋级成功对话框 -->
+        <div class="modal-backdrop" id="modal-promotion">
+            <div class="modal-card" style="text-align: center; max-width: 310px;">
+                <div style="font-size: 38px; margin-bottom: 4px;">🎉🏆</div>
+                <div class="modal-title" id="promo-title" style="font-size: 18px; color: #facc15;">晋级成功！</div>
+                <div id="promo-desc" style="font-size: 12px; color: #94a3b8; line-height: 1.6; margin: 8px 0 12px 0;">
+                    以优异战绩挺进下一轮！
+                </div>
+                <div style="background: rgba(37, 99, 235, 0.2); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 8px; padding: 8px 12px; margin-bottom: 16px; font-size: 11px; color: #e2e8f0; width: 100%; box-sizing: border-box;">
+                    ✨ 敌方阵中新增：<strong style="color: #38bdf8;" id="promo-player-name">左边后卫 (3号)</strong>
+                </div>
+                <button class="modal-btn" id="btn-next-stage" style="width: 100%;">进入下一轮挑战 ⚽</button>
+            </div>
+        </div>
+
+        <!-- 关卡失利重试对话框 -->
+        <div class="modal-backdrop" id="modal-defeat">
+            <div class="modal-card" style="text-align: center; max-width: 290px;">
+                <div style="font-size: 36px; margin-bottom: 4px;">💔⚽</div>
+                <div class="modal-title" style="font-size: 17px; color: #ef4444;">晋级受阻！</div>
+                <div id="defeat-desc" style="font-size: 12px; color: #94a3b8; line-height: 1.6; margin: 8px 0 16px 0;">
+                    对手先达到了晋级比分，整顿旗鼓重新挑战本轮！
+                </div>
+                <button class="modal-btn" id="btn-retry-stage" style="background: #ef4444; width: 100%;">重新挑战本轮 🔄</button>
+            </div>
+        </div>
+
+        <!-- 世界杯总冠军盛典对话框 -->
+        <div class="modal-backdrop" id="modal-champion">
+            <div class="modal-card" style="text-align: center; max-width: 320px; border: 1.5px solid #facc15; box-shadow: 0 0 35px rgba(250, 204, 21, 0.4);">
+                <div style="font-size: 48px; margin-bottom: 6px;">🏆👑✨</div>
+                <div class="modal-title" style="font-size: 19px; color: #facc15; font-weight: 900; letter-spacing: 1px;">WORLD CUP CHAMPION!</div>
+                <div style="font-size: 14px; font-weight: 800; color: #ffffff; margin-top: 2px;">大力神杯世界总冠军！</div>
+                <div style="font-size: 12px; color: #cbd5e1; line-height: 1.6; margin: 10px 0 18px 0;">
+                    你成功击败了拥有 11 人满编国家队的最强防线，登上世界足球之巅，捧起大力神杯！
+                </div>
+                <div style="display: flex; gap: 8px; width: 100%;">
+                    <button class="modal-btn" id="btn-restart-career" style="flex: 1; background: #3b82f6; padding: 8px 12px;">荣耀重开 🔄</button>
+                    <button class="modal-btn" id="btn-endless-11" style="flex: 1; background: #eab308; color: #0f172a; font-weight: 900; padding: 8px 12px;">11人传奇战 ⚽</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 目标比分选择对话框 -->
+        <div class="modal-backdrop" id="modal-target">
+            <div class="modal-card" style="text-align: center; max-width: 290px;">
+                <div class="modal-title" style="font-size: 15px; color: #f8fafc;">🎯 设定每轮晋级比分</div>
+                <div style="font-size: 12px; color: #94a3b8; margin-bottom: 14px;">先达到此比分的一方获得本轮晋级</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; width: 100%;">
+                    <button class="target-opt-btn" data-target="1">⚡ 1球闪电战</button>
+                    <button class="target-opt-btn" data-target="2">🔥 2球争夺战</button>
+                    <button class="target-opt-btn active" data-target="3">⭐ 3球标准赛</button>
+                    <button class="target-opt-btn" data-target="5">🛡️ 5球大师赛</button>
+                </div>
+                <button class="modal-btn" onclick="closeModals()" style="width: 100%;">确定保存 ⚽</button>
+            </div>
+        </div>
 
         <div class="modal-backdrop" id="modal-cover">
             <div class="modal-card">
@@ -506,8 +635,56 @@
 
         const walls = [];
         let keyState = { left: false, right: false };
-        let scoreP1 = 2, scoreCPU = 0;
-        let countdown = 54;
+        let scoreP1 = 0, scoreCPU = 0;
+
+        /* ==========================================================================
+           竞技晋级赛模式配置与 11 人大名单架构 (Tournament Career Ladder)
+           从 4 人阵容 (1门将 + 前锋、中卫、后卫) 逐轮晋级，终极对决 11 人满编国家队！
+           ========================================================================== */
+        const TOURNAMENT_STAGES = [
+            { name: '第 1 轮 · 选拔初赛', playerCount: 4, addedPlayer: '后卫+中场+前锋', desc: '经典开局：门将 + 后卫 + 中场 + 前锋' },
+            { name: '第 2 轮 · 小组排位赛', playerCount: 5, addedPlayer: '左边后卫 (3号)', desc: '敌方新增左边后卫，封锁左路边廊' },
+            { name: '第 3 轮 · 八强淘汰战', playerCount: 6, addedPlayer: '右边后卫 (2号)', desc: '敌方新增右边后卫，构成三后卫铁桶阵' },
+            { name: '第 4 轮 · 四分之一决赛', playerCount: 7, addedPlayer: '防守后腰 (6号)', desc: '敌方新增拦截后腰，中场拦截骤增' },
+            { name: '第 5 轮 · 半决赛巅峰前夕', playerCount: 8, addedPlayer: '左边锋 (11号)', desc: '敌方新增左边锋，左右两翼策应' },
+            { name: '第 6 轮 · 季军争夺战', playerCount: 9, addedPlayer: '右边锋 (7号)', desc: '敌方新增右边锋，形成四中场菱形体系' },
+            { name: '第 7 轮 · 决赛门票生死战', playerCount: 10, addedPlayer: '影子前锋 (8号)', desc: '敌方新增双前锋，高位逼抢严密' },
+            { name: '第 8 轮 · 世界杯终极大决战', playerCount: 11, addedPlayer: '清道夫中卫 (5号)', desc: '终极难度！11人满编国家队终极对决！' }
+        ];
+
+        const ALL_PLAYERS_CONFIG = [
+            // 0. 橙色门将 (永久首发守门线)
+            { role: 'top_keeper', baseX: 0, baseZ: G.topZ + 0.8, amplitude: 2.3, speed: 0.75, phase: 0, number: 1, title: '门将' },
+            // 1. 中卫 (初始第1轮核心防守)
+            { role: 'defender', baseX: 0, baseZ: -6.5, amplitude: 3.4, speed: 0.66, phase: 0, number: 4, title: '中后卫' },
+            // 2. 中场 (初始第1轮组织调度)
+            { role: 'midfielder', baseX: 0, baseZ: -2.5, amplitude: 5.4, speed: 0.62, phase: 1.2, number: 10, title: '中场核心' },
+            // 3. 前锋 (初始第1轮前场突刺与滑铲)
+            { role: 'slider', baseX: 0, baseZ: 3.6, amplitude: 4.8, speed: 0.58, phase: 2.6, number: 9, title: '突前锋' },
+            // 4. 左边后卫 (第2轮加入，封锁左侧边廊)
+            { role: 'defender', baseX: -3.2, baseZ: -5.6, amplitude: 2.6, speed: 0.68, phase: 0.6, number: 3, title: '左边后卫' },
+            // 5. 右边后卫 (第3轮加入，构建三中卫/三后卫体系)
+            { role: 'defender', baseX: 3.2, baseZ: -5.6, amplitude: 2.6, speed: 0.68, phase: Math.PI + 0.6, number: 2, title: '右边后卫' },
+            // 6. 防守后腰 (第4轮加入，中场扫荡屏障)
+            { role: 'slider', baseX: 0, baseZ: 0.8, amplitude: 4.2, speed: 0.62, phase: 2.0, number: 6, title: '防守后腰' },
+            // 7. 左边锋 (第5轮加入，左翼突刺)
+            { role: 'midfielder', baseX: -3.4, baseZ: -0.6, amplitude: 2.6, speed: 0.70, phase: 1.8, number: 11, title: '左边锋' },
+            // 8. 右边锋 (第6轮加入，四中场菱形体系)
+            { role: 'midfielder', baseX: 3.4, baseZ: -0.6, amplitude: 2.6, speed: 0.70, phase: Math.PI + 1.8, number: 7, title: '右边锋' },
+            // 9. 影子前锋 (第7轮加入，双前锋高位逼抢)
+            { role: 'slider', baseX: 0, baseZ: 2.2, amplitude: 3.8, speed: 0.64, phase: 0.8, number: 8, title: '影子前锋' },
+            // 10. 自由人清道夫 (第8轮加入，门将身前最后一道钢铁防线，迎战11人满编)
+            { role: 'defender', baseX: 0, baseZ: -8.8, amplitude: 3.0, speed: 0.76, phase: Math.PI * 0.5, number: 5, title: '清道夫中卫' }
+        ];
+
+        let tournamentState = {
+            currentStage: 0,
+            targetScore: 3,
+            isCompleted: false
+        };
+        window.tournamentState = tournamentState;
+        window.TOURNAMENT_STAGES = TOURNAMENT_STAGES;
+        let countdown = 60;
         let countdownMesh;
         let pitchMesh = null;
         let pitchLineMat = null;
@@ -520,6 +697,8 @@
         let pitchToastTimer = null;
 
         let characters = [];
+        window.characters = characters;
+        window.players = characters;
         let particles = [];
         let ballTrailParticles = [];
         let textures = {};
@@ -2457,43 +2636,107 @@
         }
 
         /* ==========================================================================
-           9. 电脑防守球员阵容 (橙色门将 + 蓝色 10 号、7 号，绝不自摆乌龙)
+           9. 电脑防守阵容与晋级赛动态阵容生成器 (Dynamic Tournament Roster Generator)
            ========================================================================== */
-        function buildPlayers() {
-            // 1. 橙色门将 (守门员守在门线前: G.topZ + 0.8 = -11.7，门线全覆盖巡逻: 振幅 2.3米，覆盖全门)
-            const keeper = makeHumanoid(0xf97316, 0x1e293b, 0xffffff, 'top_keeper', {
-                baseX: 0, baseZ: G.topZ + 0.8, amplitude: 2.3, speed: 0.75, phase: 0
-            });
-            scene.add(keeper.group);
-            characters.push(keeper);
+        function setupStageRoster(stageIdx, notify = true) {
+            stageIdx = Math.max(0, Math.min(TOURNAMENT_STAGES.length - 1, stageIdx));
+            tournamentState.currentStage = stageIdx;
 
-            // 2. 蓝色双后卫 (大禁区线: Z = -6.5，左/右宽幅联防巡逻: 振幅 3.6米，大范围交叉补位与空档开合)
-            const defL = makeHumanoid(0x2563eb, 0xffffff, 0xef4444, 'defender', {
-                baseX: -2.2, baseZ: -6.5, amplitude: 3.6, speed: 0.68, phase: 0
-            });
-            scene.add(defL.group);
-            characters.push(defL);
+            // 1. 安全卸载当前场上所有球员 3D 节点 (0 内存泄漏)
+            for (let i = 0; i < characters.length; i++) {
+                const c = characters[i];
+                if (c.group && c.group.parent) c.group.parent.remove(c.group);
+            }
+            characters.length = 0;
+            window.characters = characters;
+            window.players = characters;
 
-            const defR = makeHumanoid(0x2563eb, 0xffffff, 0xef4444, 'defender', {
-                baseX: 2.2, baseZ: -6.5, amplitude: 3.6, speed: 0.68, phase: Math.PI * 0.85
-            });
-            scene.add(defR.group);
-            characters.push(defR);
+            // 2. 根据当前关卡配置实例化对应数量的球员 (从第1轮 4人 逐渐晋级至第8轮 11人满编)
+            const stage = TOURNAMENT_STAGES[stageIdx];
+            const count = stage.playerCount;
 
-            // 3. 蓝色前腰 (中圈上方: Z = -2.5，全场大范围穿插调度: 振幅 5.4米，长距离连续奔跑跨越全场)
-            const mid = makeHumanoid(0x2563eb, 0xffffff, 0xef4444, 'midfielder', {
-                baseX: 0, baseZ: -2.5, amplitude: 5.4, speed: 0.62, phase: 1.2
-            });
-            scene.add(mid.group);
-            characters.push(mid);
+            for (let i = 0; i < count; i++) {
+                const cfg = ALL_PLAYERS_CONFIG[i];
+                const isKeeper = (cfg.role === 'top_keeper');
+                const jerseyColor = isKeeper ? 0xf97316 : 0x2563eb;
+                const shortsColor = isKeeper ? 0x1e293b : 0xffffff;
+                const player = makeHumanoid(jerseyColor, shortsColor, 0xef4444, cfg.role, cfg);
+                scene.add(player.group);
+                characters.push(player);
 
-            // 4. 蓝色后腰/滑铲防守球员 (中圈下方: Z = 3.6，宽幅铁闸扫荡: 振幅 4.8米，大步横向封堵)
-            const slider = makeHumanoid(0x2563eb, 0xffffff, 0xef4444, 'slider', {
-                baseX: 0, baseZ: 3.6, amplitude: 4.8, speed: 0.58, phase: 2.6
-            });
-            scene.add(slider.group);
-            characters.push(slider);
+                // 若为本轮新晋入场的防守球员，触发聚光灯登场微粒子
+                if (i === count - 1 && stageIdx > 0 && notify) {
+                    spawnSparks(cfg.baseX, 1.2, cfg.baseZ, 0x38bdf8);
+                    spawnTurfBits(cfg.baseX, 0.2, cfg.baseZ, 0x86efac);
+                }
+            }
+
+            updateTournamentHUD();
         }
+
+        function updateTournamentHUD() {
+            const stage = TOURNAMENT_STAGES[tournamentState.currentStage];
+            const badge = document.getElementById('stage-badge');
+            if (badge && stage) {
+                badge.innerText = `🏅 ${stage.name} (${stage.playerCount}人)`;
+            }
+            const num = document.getElementById('target-goals-num');
+            if (num) num.innerText = tournamentState.targetScore;
+
+            // 同步目标选择弹窗的选中高亮
+            document.querySelectorAll('.target-opt-btn').forEach(b => {
+                if (parseInt(b.getAttribute('data-target')) === tournamentState.targetScore) {
+                    b.classList.add('active');
+                } else {
+                    b.classList.remove('active');
+                }
+            });
+        }
+
+        function setTargetScore(target) {
+            tournamentState.targetScore = target;
+            updateTournamentHUD();
+            showPitchToast(`🎯 晋级目标已设置为：先得 ${target} 分`);
+            // 如果更改后已经满足晋级/失利条件，即刻判定
+            if (scoreP1 >= target) {
+                handleStageWin();
+            } else if (scoreCPU >= target) {
+                handleStageLose();
+            }
+        }
+
+        function handleStageWin() {
+            if (tournamentState.currentStage >= TOURNAMENT_STAGES.length - 1) {
+                // 击败第 8 轮 11 人终极国家队，夺得大力神杯世界冠军！
+                triggerConfettiShower();
+                Sound.play('goal', 1.0);
+                document.getElementById('modal-champion').classList.add('active');
+            } else {
+                // 晋级下一轮
+                const nextStageIdx = tournamentState.currentStage + 1;
+                const nextStage = TOURNAMENT_STAGES[nextStageIdx];
+                document.getElementById('promo-title').innerText = `🎉 恭喜挺进第 ${nextStageIdx + 1} 轮！`;
+                document.getElementById('promo-desc').innerText = `本轮以 ${scoreP1} : ${scoreCPU} 力克对手，挺进「${nextStage.name}」！`;
+                document.getElementById('promo-player-name').innerText = `${nextStage.addedPlayer} (${nextStage.playerCount}人防线)`;
+                triggerConfettiShower();
+                Sound.play('goal', 1.0);
+                document.getElementById('modal-promotion').classList.add('active');
+            }
+        }
+
+        function handleStageLose() {
+            document.getElementById('defeat-desc').innerText = `本轮比分 ${scoreP1} : ${scoreCPU}，对手先达到 ${tournamentState.targetScore} 分，整顿旗鼓重新挑战本轮！`;
+            document.getElementById('modal-defeat').classList.add('active');
+        }
+
+        function buildPlayers() {
+            setupStageRoster(0, false);
+        }
+
+        window.setupStageRoster = setupStageRoster;
+        window.handleStageWin = handleStageWin;
+        window.handleStageLose = handleStageLose;
+        window.setTargetScore = setTargetScore;
 
         function makeHumanoid(jersey, shorts, boots, role, cfg = {}) {
             const root = new THREE.Group();
@@ -2556,6 +2799,8 @@
                 group: root,
                 torso, head: headGroup, lArm, rArm, lLeg, rLeg,
                 role,
+                title: cfg.title || role,
+                number: cfg.number || 0,
                 baseX: cfg.baseX || 0,
                 baseZ: cfg.baseZ || 0,
                 amplitude: cfg.amplitude || 0,
@@ -2753,6 +2998,13 @@
                         scoreP1++;
                         document.getElementById('score-p1').innerText = scoreP1;
                         triggerGoal();
+
+                        // 晋级条件判定：达到目标比分触发晋级
+                        if (scoreP1 >= tournamentState.targetScore) {
+                            setTimeout(() => {
+                                handleStageWin();
+                            }, 1200);
+                        }
                     } else {
                         // 出界或击中球门侧柱外侧，直接重置
                         resetBall();
@@ -2762,6 +3014,13 @@
                     document.getElementById('score-cpu').innerText = scoreCPU;
                     triggerDrain();
                     resetBall();
+
+                    // 晋级失利判定：对手先达到目标比分
+                    if (scoreCPU >= tournamentState.targetScore) {
+                        setTimeout(() => {
+                            handleStageLose();
+                        }, 800);
+                    }
                 }
             }
 
@@ -3373,11 +3632,77 @@
             document.getElementById('btn-share').addEventListener('click', () => {
                 document.getElementById('modal-share').classList.add('active');
             });
+
+            // 晋级赛模式交互绑定
+            const btnTarget = document.getElementById('btn-target');
+            if (btnTarget) {
+                btnTarget.addEventListener('click', () => {
+                    document.getElementById('modal-target').classList.add('active');
+                });
+            }
+
+            document.querySelectorAll('.target-opt-btn').forEach(b => {
+                b.addEventListener('click', () => {
+                    const target = parseInt(b.getAttribute('data-target'));
+                    if (target) setTargetScore(target);
+                });
+            });
+
+            document.getElementById('btn-next-stage').addEventListener('click', () => {
+                closeModals();
+                tournamentState.currentStage++;
+                setupStageRoster(tournamentState.currentStage);
+                scoreP1 = 0;
+                scoreCPU = 0;
+                document.getElementById('score-p1').innerText = '0';
+                document.getElementById('score-cpu').innerText = '0';
+                resetBall();
+                showPitchToast(`🚀 进入「${TOURNAMENT_STAGES[tournamentState.currentStage].name}」！`);
+            });
+
+            document.getElementById('btn-retry-stage').addEventListener('click', () => {
+                closeModals();
+                setupStageRoster(tournamentState.currentStage);
+                scoreP1 = 0;
+                scoreCPU = 0;
+                document.getElementById('score-p1').innerText = '0';
+                document.getElementById('score-cpu').innerText = '0';
+                resetBall();
+                showPitchToast(`🔄 重新开始「${TOURNAMENT_STAGES[tournamentState.currentStage].name}」！`);
+            });
+
+            document.getElementById('btn-restart-career').addEventListener('click', () => {
+                closeModals();
+                tournamentState.currentStage = 0;
+                setupStageRoster(0);
+                scoreP1 = 0;
+                scoreCPU = 0;
+                document.getElementById('score-p1').innerText = '0';
+                document.getElementById('score-cpu').innerText = '0';
+                resetBall();
+                showPitchToast(`🏅 重启晋级赛：从第 1 轮初赛起步！`);
+            });
+
+            document.getElementById('btn-endless-11').addEventListener('click', () => {
+                closeModals();
+                tournamentState.currentStage = 7;
+                setupStageRoster(7);
+                scoreP1 = 0;
+                scoreCPU = 0;
+                document.getElementById('score-p1').innerText = '0';
+                document.getElementById('score-cpu').innerText = '0';
+                resetBall();
+                showPitchToast(`⚽ 传奇对决：11 人满编国家队无尽挑战！`);
+            });
         }
 
         window.closeModals = function() {
             document.getElementById('modal-cover').classList.remove('active');
             document.getElementById('modal-share').classList.remove('active');
+            document.getElementById('modal-promotion').classList.remove('active');
+            document.getElementById('modal-defeat').classList.remove('active');
+            document.getElementById('modal-champion').classList.remove('active');
+            document.getElementById('modal-target').classList.remove('active');
         };
 
         /* ==========================================================================
