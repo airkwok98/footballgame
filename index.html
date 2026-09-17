@@ -641,6 +641,8 @@
             vx: 0, vy: 0, vz: 14,
             speed: 0
         };
+        window.ball = ball;
+        window.G = G;
 
         let leftFlipper = {
             px: -G.pivotX, pz: G.pivotZ,
@@ -729,6 +731,14 @@
         let screenShake = 0;
         let bulletTimeTimer = 0;
         let goalCelebrationTimer = 0;
+        let ballSaverTimer = 0;
+        let ballSaverShieldMesh = null;
+        let ballSaverShieldGroup = null;
+        Object.defineProperty(window, 'ballSaverTimer', {
+            get() { return ballSaverTimer; },
+            set(v) { ballSaverTimer = v; },
+            configurable: true
+        });
         let currentCameraMode = '3d'; // '3d' | 'top'
         const CAM_CONFIGS = {
             '3d': {
@@ -1147,6 +1157,7 @@
                 buildFlippers();
                 buildBall();
                 buildGoals();          // 球门与看台完全露出，无遮挡！
+                buildBallSaverShield(); // 开球安全保护能量盾
                 buildPlayers();        // 阵营绝不乌龙
                 setupControls();
 
@@ -1905,20 +1916,63 @@
             resetBall();
         }
 
-        function resetBall() {
-            ball.x = 0;
-            ball.y = G.ballR;
-            ball.z = 2;
-            ball.vx = (Math.random() - 0.5) * 6.0;
-            ball.vy = 0;
-            ball.vz = 14.0;
+        function resetBall(mode = null) {
             comboCount = 0;
             ballSlipstreamTimer = 0;
             goalState.active = false;
             goalState.netSoundPlayed = false;
             topGoalNet.reset();
             document.getElementById('combo-badge').classList.remove('show');
+
+            // 激活 3.5 秒开球防漏能量盾 (Ball Saver)，绝不错杀
+            ballSaverTimer = 3.5;
+
+            // 彻底杜绝中路垂直下落！采用拟真足球 3 种安全边路/高空发球策略：
+            // 模式 0 (40%): 边线掷界外球入场 (Touchline Throw-in)
+            // 模式 1 (35%): 前场角旗高空弧线挑传入场 (High-Arc Wing Cross)
+            // 模式 2 (25%): 侧翼外轨平缓顺滑喂球 (Inlane Ramp Delivery)
+            const style = (mode !== null) ? mode : (Math.random() < 0.40 ? 0 : (Math.random() < 0.75 ? 1 : 2));
+            const isLeft = Math.random() < 0.5;
+
+            if (style === 0) {
+                // 边线界外球：从左/右侧边线横向大力掷入场内，横穿中场滑向对侧挡杆，绝不掉中缝
+                ball.x = isLeft ? -6.8 : 6.8;
+                ball.y = G.ballR + 0.12;
+                ball.z = 4.8 + Math.random() * 2.0;
+                ball.vx = isLeft ? (10.5 + Math.random() * 2.0) : -(10.5 + Math.random() * 2.0);
+                ball.vy = 1.4;
+                ball.vz = 2.0 + Math.random() * 2.0;
+                showPitchToast(isLeft ? '⚽ 左边路掷界外球入场' : '⚽ 右边路掷界外球入场');
+            } else if (style === 1) {
+                // 前场角旗高空挑传入场：高空飞行 1.5 秒划出优美抛物线落入中前场，准备时间极度充裕
+                ball.x = isLeft ? -6.5 : 6.5;
+                ball.y = 1.0;
+                ball.z = -9.5;
+                ball.vx = isLeft ? (4.2 + Math.random() * 1.2) : -(4.2 + Math.random() * 1.2);
+                ball.vy = 8.2 + Math.random() * 1.4;
+                ball.vz = 7.5 + Math.random() * 1.5;
+                showPitchToast(isLeft ? '⚽ 左路角球弧线挑传入场' : '⚽ 右路角球弧线挑传入场');
+            } else {
+                // 侧翼导轨顺滑喂球：球沿着斜护栏平稳滑落，稳稳送入玩家挡杆击球盘，从容抽射
+                ball.x = isLeft ? -6.2 : 6.2;
+                ball.y = G.ballR;
+                ball.z = 8.8;
+                ball.vx = isLeft ? 3.2 : -3.2;
+                ball.vy = 0;
+                ball.vz = 6.0 + Math.random() * 1.2;
+                showPitchToast(isLeft ? '⚽ 左侧导轨安全喂球' : '⚽ 右侧导轨安全喂球');
+            }
+
+            if (ball.mesh) {
+                ball.mesh.position.set(ball.x, ball.y, ball.z);
+            }
+
+            // 发球开球哨声与视觉微引导
+            Sound.play('whistle', 0.8, 1.15);
+            spawnSparks(ball.x, ball.y, ball.z, 0x38bdf8);
+            spawnTurfBits(ball.x, ball.y, ball.z, 0x86efac);
         }
+        window.resetBall = resetBall;
 
         /* ==========================================================================
            8. 国际足联标准立体箱式球门与拟真尼龙编织织网 (Pro Stadium Goals & Nylon Nets)
@@ -2088,6 +2142,49 @@
             if (isTop) {
                 topGoalNet.init(backMesh);
             }
+        }
+
+        /* ==========================================================================
+           8.4 开球防漏激光护盾与能量网 (Ball Saver Laser Energy Barrier)
+           ========================================================================== */
+        function buildBallSaverShield() {
+            ballSaverShieldGroup = new THREE.Group();
+
+            // 1. 门线激光发光条带 (Neon Laser Barrier)
+            const laserGeo = new THREE.BoxGeometry(6.6, 0.16, 0.24);
+            const laserMat = new THREE.MeshBasicMaterial({
+                color: 0x38bdf8,
+                transparent: true,
+                opacity: 0.85,
+                blending: THREE.AdditiveBlending
+            });
+            ballSaverShieldMesh = new THREE.Mesh(laserGeo, laserMat);
+            ballSaverShieldMesh.position.set(0, 0.45, 15.38);
+            ballSaverShieldGroup.add(ballSaverShieldMesh);
+
+            // 2. 左右能量发射极微型底座 (Mini Laser Emitters)
+            const emitterMat = new THREE.MeshStandardMaterial({
+                color: 0x0f172a,
+                metalness: 0.85,
+                roughness: 0.2
+            });
+            const emitterGeo = new THREE.CylinderGeometry(0.12, 0.16, 0.35, 12);
+            [-3.3, 3.3].forEach(x => {
+                const em = new THREE.Mesh(emitterGeo, emitterMat);
+                em.position.set(x, 0.2, 15.38);
+                ballSaverShieldGroup.add(em);
+
+                const ring = new THREE.Mesh(
+                    new THREE.TorusGeometry(0.14, 0.035, 8, 16),
+                    new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+                );
+                ring.rotation.x = Math.PI / 2;
+                ring.position.set(x, 0.35, 15.38);
+                ballSaverShieldGroup.add(ring);
+            });
+
+            ballSaverShieldGroup.visible = false;
+            scene.add(ballSaverShieldGroup);
         }
 
         /* ==========================================================================
@@ -3397,6 +3494,16 @@
                         // 出界或击中球门侧柱外侧，直接重置
                         resetBall();
                     }
+                } else if (ballSaverTimer > 0 && ball.z >= 15.15 && ball.z <= 16.5 && Math.abs(ball.x) < 4.0) {
+                    // 开球安全保护能量盾（Ball Saver）生效：强力反弹踢回场内，绝不丢分！
+                    ball.z = 15.0;
+                    ball.vz = -21.0;
+                    ball.vx = (Math.random() - 0.5) * 8.0;
+                    screenShake = 0.32;
+                    Sound.play('bounce', 1.0, 1.4);
+                    spawnSparks(ball.x, 0.45, ball.z, 0x38bdf8);
+                    showPitchToast('🛡️ 开球保护生效！能量网强力反弹！');
+                    ballSaverTimer = Math.min(ballSaverTimer, 0.8);
                 } else if (ball.z > 16.0) {
                     scoreCPU++;
                     document.getElementById('score-cpu').innerText = scoreCPU;
@@ -4118,6 +4225,22 @@
                 const cf = cornerFlags[i];
                 cf.clothGrp.rotation.y = cf.baseAngle + Math.sin(elapsedTime * 3.4 + cf.phase) * 0.20;
                 cf.clothGrp.rotation.z = Math.sin(elapsedTime * 2.6 + cf.phase) * 0.05;
+            }
+
+            // 开球防漏保护能量盾动画与微脉冲 (Ball Saver Laser Pulse)
+            if (ballSaverTimer > 0) {
+                ballSaverTimer -= dt;
+                if (ballSaverShieldGroup) {
+                    ballSaverShieldGroup.visible = true;
+                    if (ballSaverShieldMesh) {
+                        const pulse = 0.55 + 0.35 * Math.sin(elapsedTime * 14.0);
+                        ballSaverShieldMesh.material.opacity = Math.min(1.0, ballSaverTimer * 0.45) * pulse;
+                    }
+                }
+            } else {
+                if (ballSaverShieldGroup && ballSaverShieldGroup.visible) {
+                    ballSaverShieldGroup.visible = false;
+                }
             }
 
             // 相机平滑阻尼过渡与动态微视差 (Smooth Camera Lerp & Parallax Tracking)
