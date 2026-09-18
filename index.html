@@ -477,6 +477,7 @@
     <script src="libs/three.min.js"></script>
     <script src="libs/loaders/GLTFLoader.js"></script>
     <script src="libs/utils/BufferGeometryUtils.js"></script>
+    <script src="libs/utils/SkeletonUtils.js"></script>
     <!-- Visual 2.0 模块化架构 -->
     <script src="src/rendering/quality.js"></script>
     <script src="src/rendering/postprocessing.js"></script>
@@ -484,6 +485,7 @@
     <script src="src/materials/ballMaterial.js"></script>
     <script src="src/materials/flipperMaterial.js"></script>
     <script src="src/actors/playerVisual.js"></script>
+    <script src="src/actors/externalPlayer.js"></script>
     <script src="src/effects/goalImpactStack.js"></script>
     <script src="src/actors/stadiumCrowd.js"></script>
     <!-- External GLTF 资产模块 -->
@@ -3079,6 +3081,9 @@
             characters.length = 0;
             window.characters = characters;
             window.players = characters;
+            if (window.ExternalPlayers && window.ExternalPlayers.clearInstances) {
+                window.ExternalPlayers.clearInstances();
+            }
 
             // 2. 根据当前关卡配置实例化对应数量的球员 (从第1轮 4人 逐渐晋级至第8轮 11人满编)
             const stage = TOURNAMENT_STAGES[stageIdx];
@@ -3089,7 +3094,12 @@
                 const isKeeper = (cfg.role === 'top_keeper');
                 const jerseyColor = isKeeper ? 0xf97316 : 0x2563eb;
                 const shortsColor = isKeeper ? 0x1e293b : 0xffffff;
-                const player = makeHumanoid(jerseyColor, shortsColor, 0xef4444, cfg.role, cfg);
+                let player;
+                if (window.ExternalPlayers && window.ExternalPlayers.active && window.ExternalPlayers.isReady()) {
+                    player = window.ExternalPlayers.createPlayer(jerseyColor, shortsColor, 0xef4444, cfg.role, cfg);
+                } else {
+                    player = makeHumanoid(jerseyColor, shortsColor, 0xef4444, cfg.role, cfg);
+                }
                 scene.add(player.group);
                 characters.push(player);
 
@@ -3159,7 +3169,16 @@
         }
 
         function buildPlayers() {
-            setupStageRoster(0, false);
+            if (window.ExternalPlayers && window.ExternalPlayers.checkUrlGate()) {
+                setupStageRoster(0, false);
+                window.ExternalPlayers.init(scene, (active) => {
+                    if (active) {
+                        setupStageRoster(0, false);
+                    }
+                });
+            } else {
+                setupStageRoster(0, false);
+            }
         }
 
         window.setupStageRoster = setupStageRoster;
@@ -4374,6 +4393,9 @@
                 if (window.Visual2.flippers) window.Visual2.flippers.update(dt);
                 if (window.Visual2.postprocessing) window.Visual2.postprocessing.update(dt);
                 if (window.Visual2.goalImpact) window.Visual2.goalImpact.update(dt);
+            }
+            if (window.ExternalPlayers && window.ExternalPlayers.update) {
+                window.ExternalPlayers.update(dt);
             }
 
             // 3D 角旗随场馆微风自然飘扬 (Dynamic Stadium Breeze)
