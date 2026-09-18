@@ -473,8 +473,9 @@
         </div>
     </div>
 
-    <!-- 离线 3D 渲染核心 -->
+    <!-- 核心 3D 渲染库 -->
     <script src="libs/three.min.js"></script>
+    <script src="libs/loaders/GLTFLoader.js"></script>
     <!-- Visual 2.0 模块化架构 -->
     <script src="src/rendering/quality.js"></script>
     <script src="src/rendering/postprocessing.js"></script>
@@ -484,6 +485,10 @@
     <script src="src/actors/playerVisual.js"></script>
     <script src="src/effects/goalImpactStack.js"></script>
     <script src="src/actors/stadiumCrowd.js"></script>
+    <!-- External GLTF 资产模块 -->
+    <script src="src/assets/gltfAssetLoader.js"></script>
+    <script src="src/assets/externalBall.js"></script>
+    <script src="src/assets/externalStadium.js"></script>
 
     <script>
         /* ==========================================================================
@@ -1943,6 +1948,11 @@
                 window.Visual2.ball.init(ball.mesh, { classic: textures.classic, magma: textures.magma });
             }
 
+            // External 3D Asset: 若开启 ?assets=external，挂载外部超写实足球模型并自动校准尺寸与中心
+            if (window.ExternalBall) {
+                window.ExternalBall.init(ball.mesh, G);
+            }
+
             resetBall();
         }
 
@@ -2264,6 +2274,7 @@
             return tex;
         }
 
+        let atmosphereBackdrop = null;
         function buildStadiumAtmosphere() {
             // 1. 宏伟远景看台天幕与夜空射灯穹顶 (Stadium Panoramic Grandstand Backdrop)
             if (textures.stadium_backdrop) {
@@ -2277,6 +2288,7 @@
                     side: THREE.DoubleSide
                 });
                 const backdropMesh = new THREE.Mesh(backdropGeo, backdropMat);
+                atmosphereBackdrop = backdropMesh;
                 // 位于球门及看台深后方 Z = -22.5，微倾斜对准俯视相机，四周阿尔法羽化自然融入 Slate 蓝底色
                 backdropMesh.position.set(0, 11.5, -22.5);
                 backdropMesh.rotation.x = -0.85;
@@ -2551,6 +2563,11 @@
                 }
                 scene.add(trussGroup);
             });
+
+            // External 3D Asset: 若开启 ?assets=external，加载真实 Cheltenham 3D 足球场环境
+            if (window.ExternalStadium) {
+                window.ExternalStadium.init(scene, G, { backdrop: atmosphereBackdrop });
+            }
         }
 
         /* ==========================================================================

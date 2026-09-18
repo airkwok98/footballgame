@@ -116,6 +116,9 @@
             } else {
                 this.rocketTimer = 0.0;
             }
+            if (root.ExternalBall) {
+                root.ExternalBall.setRocketState(active, duration);
+            }
         }
 
         reset() {
@@ -125,6 +128,9 @@
             this.rocketTimer = 0.0;
             if (this.standardMaterial && this.standardMaterial.userData.shader) {
                 this.standardMaterial.userData.shader.uniforms.uRocketIntensity.value = 0.0;
+            }
+            if (root.ExternalBall) {
+                root.ExternalBall.setRocketState(false, 0.0);
             }
         }
 
@@ -160,6 +166,10 @@
 
             if (this.standardMaterial && this.standardMaterial.userData.shader) {
                 this.standardMaterial.userData.shader.uniforms.uRocketIntensity.value = this.rocketIntensity;
+            }
+
+            if (root.ExternalBall) {
+                root.ExternalBall.update(dt);
             }
         }
     }
