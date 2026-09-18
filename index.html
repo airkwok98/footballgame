@@ -490,6 +490,7 @@
     <script src="src/assets/gltfAssetLoader.js"></script>
     <script src="src/assets/externalBall.js"></script>
     <script src="src/assets/externalStadium.js"></script>
+    <script src="src/assets/footballCourtStadium.js"></script>
 
     <script>
         /* ==========================================================================
@@ -2565,9 +2566,13 @@
                 scene.add(trussGroup);
             });
 
-            // External 3D Asset: 若开启 ?assets=external，加载真实 Cheltenham 3D 足球场环境
+            // External 3D Asset: 若开启 ?assets=external，加载真实 Cheltenham 3D 足球场环境 (POC)
             if (window.ExternalStadium) {
                 window.ExternalStadium.init(scene, G, { backdrop: atmosphereBackdrop });
+            }
+            // Modular 3D Asset: 若开启 ?stadium=football_court，加载模块化真实看台与高空灯塔
+            if (window.FootballCourtStadium) {
+                window.FootballCourtStadium.init(scene, G, { backdrop: atmosphereBackdrop });
             }
         }
 
@@ -2828,7 +2833,7 @@
                 };
             }
 
-            function createWavingFlag(x, y, z, rotY, color1, color2) {
+            function createWavingFlag(x, y, z, rotY, color1, color2, parent = scene) {
                 const group = new THREE.Group();
                 const pole = new THREE.Mesh(
                     new THREE.CylinderGeometry(0.04, 0.05, 2.8, 8),
@@ -2858,7 +2863,7 @@
 
                 group.position.set(x, y, z);
                 group.rotation.y = rotY;
-                scene.add(group);
+                parent.add(group);
 
                 stadiumFlags.push({ mesh: flagMesh, geo: flagGeo, phase: Math.random() * Math.PI });
             }
@@ -2866,6 +2871,11 @@
             // ==========================================
             // A. 顶部主看台 (Top Grandstand Behind Goal)
             // ==========================================
+            const topGrandstandGroup = new THREE.Group();
+            topGrandstandGroup.name = "ProceduralTopGrandstandGroup";
+            scene.add(topGrandstandGroup);
+            window.proceduralTopGrandstandGroup = topGrandstandGroup;
+
             // 1. 三级阶梯混凝土看台基座 (Stepped Concrete Risers)
             const topTiers = [
                 { y: 0.28, z: G.topZ - 2.8, h: 0.55, d: 1.1 },
@@ -2877,13 +2887,13 @@
                 mesh.position.set(0, t.y, t.z);
                 mesh.castShadow = true;
                 mesh.receiveShadow = true;
-                scene.add(mesh);
+                topGrandstandGroup.add(mesh);
             });
 
             // 顶部看台后矮墙
             const topWall = new THREE.Mesh(new THREE.BoxGeometry(16.8, 1.4, 0.28), concreteMat);
             topWall.position.set(0, 2.2, G.topZ - 5.45);
-            scene.add(topWall);
+            topGrandstandGroup.add(topWall);
 
             // 2. 顶部看台观众排布 (3 排，每排 14 人 = 42 位真实人形球迷)
             topTiers.forEach((tier, rowIdx) => {
@@ -2901,7 +2911,7 @@
 
                     const spec = createSingleSpectator(kit, skin, hair, pose);
                     spec.root.position.set(startX + i * stepX + (Math.random() - 0.5) * 0.08, surfaceY, tier.z);
-                    scene.add(spec.root);
+                    topGrandstandGroup.add(spec.root);
                     stadiumSpectators.push(spec);
                 }
             });
@@ -2919,13 +2929,13 @@
                 const topStripMesh = new THREE.Mesh(topStripGeo, topStripMat);
                 topStripMesh.position.set(0, 3.3, G.topZ - 5.35);
                 topStripMesh.rotation.x = -0.85;
-                scene.add(topStripMesh);
+                topGrandstandGroup.add(topStripMesh);
             }
 
             // 4. 顶部看台 3D 挥舞大队旗
-            createWavingFlag(-6.6, 1.85, G.topZ - 4.9, 0.3, '#dc2626', '#ffffff');
-            createWavingFlag(0, 1.85, G.topZ - 4.9, 0, '#2563eb', '#eab308');
-            createWavingFlag(6.6, 1.85, G.topZ - 4.9, -0.3, '#16a34a', '#ffffff');
+            createWavingFlag(-6.6, 1.85, G.topZ - 4.9, 0.3, '#dc2626', '#ffffff', topGrandstandGroup);
+            createWavingFlag(0, 1.85, G.topZ - 4.9, 0, '#2563eb', '#eab308', topGrandstandGroup);
+            createWavingFlag(6.6, 1.85, G.topZ - 4.9, -0.3, '#16a34a', '#ffffff', topGrandstandGroup);
 
             // ==========================================
             // B. 左右边线看台 (Sideline Grandstands)

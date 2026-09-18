@@ -9,8 +9,8 @@
     const params = new URLSearchParams(window.location.search);
     const modeParam = (params.get('assets') || '').toLowerCase();
     const stadiumParam = (params.get('stadium') || '').toLowerCase();
-    // Default to 'legacy' unless external assets or cheltenham POC requested
-    const isExternal = (modeParam === 'external' || modeParam === 'cheltenham' || stadiumParam === 'cheltenham');
+    // External asset mode active if assets=external, assets=cheltenham, stadium=cheltenham, or stadium=football_court
+    const isExternal = (modeParam === 'external' || modeParam === 'cheltenham' || stadiumParam === 'cheltenham' || stadiumParam === 'football_court');
     const currentMode = isExternal ? 'external' : 'legacy';
 
     console.log(`[AssetLoader] Initializing asset mode: ${currentMode} (URL params: assets=${modeParam || 'none'}, stadium=${stadiumParam || 'none'})`);
