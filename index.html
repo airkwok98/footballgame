@@ -3176,9 +3176,12 @@
 
         function buildPlayers() {
             if (window.ExternalPlayers && window.ExternalPlayers.checkUrlGate()) {
-                setupStageRoster(0, false);
+                // 不预先创建任何 Legacy Player，防止遗留未被 dispose 的程序化幽灵几何体与纹理
                 window.ExternalPlayers.init(scene, (active) => {
                     if (active) {
+                        setupStageRoster(0, false);
+                    } else {
+                        // External 加载失败才创建 Legacy fallback
                         setupStageRoster(0, false);
                     }
                 });
@@ -3422,6 +3425,9 @@
                     ball.vy = 0;
                     ball.vz = 0;
                     if (ball.mesh) ball.mesh.position.set(0, G.ballR, 1.0);
+                }
+                for (let i = 0; i < characters.length; i++) {
+                    updateCPUDefender(characters[i], dt);
                 }
                 return;
             }
@@ -3834,11 +3840,30 @@
             const benchParam = new URLSearchParams(window.location.search).get('benchmarkPlayers');
             const isBenchmarkMode = (benchParam !== null && !isNaN(parseInt(benchParam, 10)));
             if (isBenchmarkMode) {
+                const benchState = (new URLSearchParams(window.location.search).get('benchmarkState') || 'run').toLowerCase();
                 c.actionType = 'none';
                 c.actionTimer = 0;
-                c.time += dt * (c.speed || 0.65);
                 const pos = c.group.position;
-                pos.x = c.baseX + (c.amplitude || 2.5) * Math.sin(c.time);
+                if (benchState === 'idle') {
+                    pos.x = c.baseX;
+                    pos.z = c.baseZ;
+                    pos.y = 0;
+                    return;
+                }
+                // benchState === 'run': 恒定速率持续往返巡逻 (绝对排除速度为 0 的静止死区)
+                c.time += dt;
+                const amp = (c.amplitude || 2.5);
+                const V = 1.4; // 1.4 m/s 恒定速率，全周期严格满足 speed > 0.15
+                const span = 2.0 * amp;
+                const cycle = 2.0 * span / V;
+                const tMod = ((c.time + (c.phase || 0)) % cycle + cycle) % cycle;
+                let relX = 0;
+                if (tMod < span / V) {
+                    relX = -amp + tMod * V;
+                } else {
+                    relX = amp - (tMod - span / V) * V;
+                }
+                pos.x = c.baseX + relX;
                 pos.z = c.baseZ;
                 pos.y = 0;
                 if (c.lLeg && c.rLeg) {

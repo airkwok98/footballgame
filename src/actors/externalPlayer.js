@@ -53,8 +53,19 @@
         if (typeof THREE !== 'undefined' && THREE.PropertyBinding && THREE.PropertyBinding.parseTrackName) {
             try {
                 const parsed = THREE.PropertyBinding.parseTrackName(trackName);
-                if (parsed && (parsed.nodeName || parsed.objectName)) {
-                    return parsed.nodeName || parsed.objectName;
+                if (parsed) {
+                    if (parsed.objectName === 'bones' && parsed.objectIndex) {
+                        return parsed.objectIndex;
+                    }
+                    if (parsed.nodeName) {
+                        return parsed.nodeName;
+                    }
+                    if (parsed.objectIndex) {
+                        return parsed.objectIndex;
+                    }
+                    if (parsed.objectName) {
+                        return parsed.objectName;
+                    }
                 }
             } catch (e) {}
         }
@@ -445,6 +456,7 @@
         }
 
         clearInstances() {
+            const disposedSkeletons = new Set();
             for (let inst of this.instances) {
                 if (inst.mixer) {
                     inst.mixer.stopAllAction();
@@ -455,8 +467,9 @@
                 }
                 if (inst.clonedModel) {
                     inst.clonedModel.traverse((child) => {
-                        if (child.isSkinnedMesh && child.skeleton) {
+                        if (child.isSkinnedMesh && child.skeleton && !disposedSkeletons.has(child.skeleton.uuid)) {
                             child.skeleton.dispose();
+                            disposedSkeletons.add(child.skeleton.uuid);
                         }
                     });
                 }
