@@ -7,8 +7,9 @@
     'use strict';
 
     const params = new URLSearchParams(window.location.search);
-    const modeParam = (params.get('assets') || '').toLowerCase();
-    const stadiumParam = (params.get('stadium') || '').toLowerCase();
+    const isReview = (params.get('review') || '').toLowerCase() === 'current';
+    const modeParam = (params.get('assets') || (isReview ? 'external' : '')).toLowerCase();
+    const stadiumParam = (params.get('stadium') || (isReview ? 'football_court' : '')).toLowerCase();
     // External asset mode active if assets=external, assets=cheltenham, stadium=cheltenham, or stadium=football_court
     const isExternal = (modeParam === 'external' || modeParam === 'cheltenham' || stadiumParam === 'cheltenham' || stadiumParam === 'football_court');
     const currentMode = isExternal ? 'external' : 'legacy';

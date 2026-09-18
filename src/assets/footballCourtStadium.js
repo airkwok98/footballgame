@@ -72,7 +72,8 @@
             this.sceneRef = scene;
 
             const params = new URLSearchParams(window.location.search);
-            const stadiumParam = (params.get('stadium') || '').toLowerCase();
+            const isReview = (params.get('review') || '').toLowerCase() === 'current';
+            const stadiumParam = (params.get('stadium') || (isReview ? 'football_court' : '')).toLowerCase();
             const allowCourt = (stadiumParam === 'football_court');
             this.seatTheme = (params.get('seats') || 'navy').toLowerCase();
 

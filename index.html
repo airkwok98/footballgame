@@ -353,6 +353,54 @@
             margin-top: 12px; background: #2563eb; color: white; border: none;
             padding: 8px 24px; border-radius: 999px; font-weight: 700; cursor: pointer;
         }
+
+        /* Review HUD 纯视觉评审迷你调试标牌 */
+        #review-hud {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            background: rgba(5, 5, 16, 0.82);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 8px;
+            padding: 10px 14px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+            font-size: 11px;
+            color: #94a3b8;
+            z-index: 9999;
+            line-height: 1.55;
+            min-width: 185px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+            pointer-events: none;
+            user-select: none;
+        }
+        #review-hud .review-title {
+            font-weight: 700;
+            color: #f8fafc;
+            letter-spacing: 0.6px;
+            margin-bottom: 5px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 4px;
+            display: flex;
+            justify-content: space-between;
+        }
+        #review-hud .review-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 1px 0;
+        }
+        #review-hud .review-row b {
+            color: #e2e8f0;
+        }
+        #review-hud .review-hint {
+            margin-top: 6px;
+            padding-top: 4px;
+            border-top: 1px dashed rgba(255, 255, 255, 0.1);
+            font-size: 10px;
+            color: #64748b;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -470,6 +518,21 @@
                 <img src="assets/ui/share_card.jpg" alt="战报">
                 <button class="modal-btn" onclick="closeModals()">重返球场</button>
             </div>
+        </div>
+
+        <!-- Review HUD (可通过 [H] 键切换显隐) -->
+        <div id="review-hud" style="display: none;">
+            <div class="review-title">
+                <span>CURRENT ASSET REVIEW</span>
+                <span id="review-fps" style="color: #4ade80;">-- FPS</span>
+            </div>
+            <div class="review-row"><span>Ball:</span> <b style="color: #38bdf8;">External</b></div>
+            <div class="review-row"><span>Stadium:</span> <b style="color: #38bdf8;">Football Court</b></div>
+            <div class="review-row"><span>Player:</span> <b style="color: #f59e0b;">Alien Technical Dummy</b></div>
+            <div class="review-row"><span>Players:</span> <b id="review-players">--</b></div>
+            <div class="review-row"><span>Draw Calls:</span> <b id="review-calls">--</b></div>
+            <div class="review-row"><span>Triangles:</span> <b id="review-tris">--</b></div>
+            <div class="review-hint">[H] Toggle HUD · [1-5] Cameras</div>
         </div>
     </div>
 
@@ -1178,6 +1241,7 @@
                 buildBallSaverShield(); // 开球安全保护能量盾
                 buildPlayers();        // 阵营绝不乌龙
                 setupControls();
+                initReviewHUD();
 
                 const testParam = new URLSearchParams(window.location.search).get('test');
                 if (testParam === 'net_hit') {
@@ -1348,6 +1412,71 @@
             Sound.play('bounce', 0.5, 1.6);
         }
         window.toggleCameraMode = toggleCameraMode;
+
+        /* ==========================================================================
+           Review Preset 调试相机预设 (键盘 1 - 5 切换)
+           ========================================================================== */
+        const REVIEW_CAMERA_PRESETS = {
+            1: { name: 'Normal Gameplay (主比赛)', pos: new THREE.Vector3(0, 33.0, 23.5), target: new THREE.Vector3(0, 0.2, 2.0), fov: 52 },
+            2: { name: 'Close Players (近景球员与足球)', pos: new THREE.Vector3(0, 16.0, 12.5), target: new THREE.Vector3(0, 1.0, -1.0), fov: 48 },
+            3: { name: 'Goal End (球门·门将·看台)', pos: new THREE.Vector3(0, 7.5, -3.5), target: new THREE.Vector3(0, 1.5, -14.0), fov: 55 },
+            4: { name: 'High Overview (体育场全局俯瞰)', pos: new THREE.Vector3(0, 52.0, 11.0), target: new THREE.Vector3(0, 0.0, 0.5), fov: 50 },
+            5: { name: 'Side Stadium (东看台俯视横向透视)', pos: new THREE.Vector3(23.0, 16.0, 0.0), target: new THREE.Vector3(0, 1.0, -1.0), fov: 50 }
+        };
+
+        function setReviewCamera(presetIdx, instant = false) {
+            const p = REVIEW_CAMERA_PRESETS[presetIdx];
+            if (!p) return;
+            targetCamPos.copy(p.pos);
+            targetCamLook.copy(p.target);
+            camera.fov = p.fov;
+            camera.updateProjectionMatrix();
+            if (instant) {
+                currentCamPos.copy(p.pos);
+                currentCamLook.copy(p.target);
+                camera.position.copy(p.pos);
+                camera.lookAt(p.target);
+            }
+            showPitchToast(`🎥 视角 [${presetIdx}]: ${p.name}`);
+        }
+        window.setReviewCamera = setReviewCamera;
+        window.REVIEW_CAMERA_PRESETS = REVIEW_CAMERA_PRESETS;
+
+        function initReviewHUD() {
+            const isReview = (new URLSearchParams(window.location.search).get('review') || '').toLowerCase() === 'current';
+            const rh = document.getElementById('review-hud');
+            if (!rh) return;
+            if (isReview) {
+                rh.style.display = 'block';
+            }
+            let frameCounter = 0;
+            let lastFpsTime = performance.now();
+            let currentFps = 60;
+
+            window.__reviewTickFrame = () => { frameCounter++; };
+
+            setInterval(() => {
+                if (rh.style.display === 'none') return;
+                const now = performance.now();
+                const elapsed = (now - lastFpsTime) / 1000;
+                if (elapsed >= 0.25) {
+                    currentFps = Math.round(frameCounter / Math.max(0.001, elapsed));
+                    frameCounter = 0;
+                    lastFpsTime = now;
+                }
+                const fpsEl = document.getElementById('review-fps');
+                const playersEl = document.getElementById('review-players');
+                const callsEl = document.getElementById('review-calls');
+                const trisEl = document.getElementById('review-tris');
+                if (fpsEl) fpsEl.innerText = `${currentFps} FPS`;
+                if (playersEl) playersEl.innerText = `${characters ? characters.length : 0}`;
+                if (renderer && renderer.info) {
+                    if (callsEl) callsEl.innerText = `${renderer.info.render.calls}`;
+                    if (trisEl) trisEl.innerText = `${renderer.info.render.triangles.toLocaleString()}`;
+                }
+            }, 250);
+        }
+        window.initReviewHUD = initReviewHUD;
 
         function loadAllAssets(done) {
             const loader = new THREE.TextureLoader();
@@ -3090,7 +3219,15 @@
             const stage = TOURNAMENT_STAGES[stageIdx];
             const benchParam = new URLSearchParams(window.location.search).get('benchmarkPlayers');
             const isBenchmarkMode = (benchParam !== null && !isNaN(parseInt(benchParam, 10)));
-            const count = isBenchmarkMode ? Math.max(1, Math.min(11, parseInt(benchParam, 10))) : stage.playerCount;
+            const reviewPlayersParam = new URLSearchParams(window.location.search).get('reviewPlayers');
+            const isReviewPlayers = (reviewPlayersParam !== null && !isNaN(parseInt(reviewPlayersParam, 10)));
+
+            let count = stage.playerCount;
+            if (isBenchmarkMode) {
+                count = Math.max(1, Math.min(11, parseInt(benchParam, 10)));
+            } else if (isReviewPlayers) {
+                count = Math.max(1, Math.min(11, parseInt(reviewPlayersParam, 10)));
+            }
 
             for (let i = 0; i < count; i++) {
                 let cfg = ALL_PLAYERS_CONFIG[i];
@@ -4249,16 +4386,25 @@
                     ballSlipstreamCrit = true;
                     Sound.play('kick_crit', 1.0);
                 }
+                if (e.key >= '1' && e.key <= '5') {
+                    setReviewCamera(parseInt(e.key, 10));
+                }
                 if (e.key === 'h' || e.key === 'H') {
-                    // H 键：高空传中喂球，测试球员拔地跃起头球冲顶争顶！
+                    const rh = document.getElementById('review-hud');
+                    if (rh) {
+                        rh.style.display = (rh.style.display === 'none') ? 'block' : 'none';
+                    }
+                    // 高空传中喂球，测试球员拔地跃起头球冲顶争顶！
                     const targets = characters.filter(c => c.role !== 'top_keeper');
-                    const target = targets[Math.floor(Math.random() * targets.length)];
-                    ball.x = target.group.position.x + (Math.random() - 0.5) * 0.3;
-                    ball.z = target.group.position.z + 1.2;
-                    ball.y = 2.5;
-                    ball.vx = (Math.random() - 0.5) * 1.5;
-                    ball.vy = -1.2;
-                    ball.vz = -10.0;
+                    if (targets.length > 0) {
+                        const target = targets[Math.floor(Math.random() * targets.length)];
+                        ball.x = target.group.position.x + (Math.random() - 0.5) * 0.3;
+                        ball.z = target.group.position.z + 1.2;
+                        ball.y = 2.5;
+                        ball.vx = (Math.random() - 0.5) * 1.5;
+                        ball.vy = -1.2;
+                        ball.vz = -10.0;
+                    }
                 }
                 if (e.key === 'k' || e.key === 'K') {
                     // K 键：贴地快球喂球，测试球员外脚背抽射！
@@ -4445,6 +4591,9 @@
             // Visual 2.0: 开始帧计时与性能统计
             if (window.Visual2 && window.Visual2.quality) {
                 window.Visual2.quality.beginFrame();
+            }
+            if (window.__reviewTickFrame) {
+                window.__reviewTickFrame();
             }
 
             physicsTick(dt);

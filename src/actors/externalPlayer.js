@@ -423,7 +423,8 @@
 
         checkUrlGate() {
             const params = new URLSearchParams(window.location.search);
-            const playerParam = (params.get('players') || 'legacy').toLowerCase();
+            const isReview = (params.get('review') || '').toLowerCase() === 'current';
+            const playerParam = (params.get('players') || (isReview ? 'external' : 'legacy')).toLowerCase();
             return playerParam === 'external';
         }
 
