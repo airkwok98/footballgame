@@ -17,11 +17,22 @@
 
     // Strict Whitelist of approved stadium architectural components
     const STADIUM_ALLOWED_NODES = [
-        'court_Red_Tribune_0',    // 31,200 tris - Tiered red folding spectator seats
+        'court_Red_Tribune_0',    // 31,200 tris - Tiered folding spectator seats
         'court_Black_Tribune_0',  // 27,542 tris - Concrete grandstand stepped risers
         'court_proof_0',          //    152 tris - High cantilever canopy roof
         'court_spot_light_0'      //     32 tris - Modern floodlight pylon fixtures
     ];
+
+    // High-performance deterministic PRNG (Mulberry32) for reproducible visual benchmark
+    function createPRNG(seed) {
+        let s = (seed >>> 0) || 20260918;
+        return function() {
+            s = (s + 0x6D2B79F5) | 0;
+            let t = Math.imul(s ^ (s >>> 15), 1 | s);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t >>> 0) / 4294967296);
+        };
+    }
 
     class FootballCourtStadiumController {
         constructor() {
@@ -36,6 +47,7 @@
             this.sceneRef = null;
             this.scaleFactor = 1.45;
             this.seatTheme = 'navy';
+            this.crowdSeed = 20260918;
 
             // Mesh references
             this.seatsMeshRef = null;
@@ -43,9 +55,14 @@
 
             this.stats = {
                 importedFullTris: 137257,
-                selectedTris: 58926,
-                standTris: 58926,
+                northTris: 58926,
+                westTris: 58742,
+                eastTris: 58742,
+                generatedEnvTris: 0,
+                crowdTris: 0,
                 totalStadiumTris: 0,
+                crowdCount: 0,
+                crowdSeed: 20260918,
                 selectedMeshes: 4,
                 drawCalls: 0
             };
@@ -59,19 +76,23 @@
             const allowCourt = (stadiumParam === 'football_court');
             this.seatTheme = (params.get('seats') || 'navy').toLowerCase();
 
+            const seedParam = parseInt(params.get('crowdSeed') || '20260918', 10);
+            this.crowdSeed = isNaN(seedParam) ? 20260918 : seedParam;
+            this.stats.crowdSeed = this.crowdSeed;
+
             if (!allowCourt) {
                 this.active = false;
                 return;
             }
 
-            console.log(`[FootballCourt] Initiating Cohesive Stadium Environment (?stadium=football_court, seats=${this.seatTheme})...`);
+            console.log(`[FootballCourt] Initiating Cohesive Stadium Environment (?stadium=football_court, seats=${this.seatTheme}, seed=${this.crowdSeed})...`);
             const modelUrl = 'assets/models/stadium/football_court/scene.gltf';
 
             try {
                 const gltf = await root.AssetManager.load(modelUrl);
                 this.setupCohesiveStadium(gltf, G, proceduralAtmosphere);
                 this.active = true;
-                console.log(`[FootballCourt] Cohesive Stadium Active! Total Tris: ${this.stats.totalStadiumTris.toLocaleString()}, Seats Theme: ${this.seatTheme}`);
+                console.log(`[FootballCourt] Cohesive Stadium Active! Total Stadium Tris: ${this.stats.totalStadiumTris.toLocaleString()} (N:${this.stats.northTris} W:${this.stats.westTris} E:${this.stats.eastTris} Env:${this.stats.generatedEnvTris} Crowd:${this.stats.crowdTris}), Seats Theme: ${this.seatTheme}, Crowd Count: ${this.stats.crowdCount}`);
             } catch (err) {
                 console.warn('[FootballCourt] Failed to load modular football court model:', err);
                 this.active = false;
@@ -177,7 +198,27 @@
             if (window.proceduralSideGrandstandGroup) window.proceduralSideGrandstandGroup.visible = false;
             if (window.legacyRoofTrussGroup) window.legacyRoofTrussGroup.visible = false;
 
-            this.stats.totalStadiumTris = this.stats.selectedTris * 3 + 1200; // 3 stands + low-poly enclosure
+            // 9. Accurately calculate stadium triangle budget metrics
+            let genTris = 0;
+            const countMeshTris = (root) => {
+                if (!root) return;
+                root.traverse(child => {
+                    if (child.isMesh && child.geometry) {
+                        const count = child.geometry.index ?
+                            child.geometry.index.count / 3 :
+                            (child.geometry.attributes.position ? child.geometry.attributes.position.count / 3 : 0);
+                        genTris += count;
+                    }
+                });
+            };
+            countMeshTris(this.goalBaseRoot);
+            countMeshTris(this.enclosureRoot);
+
+            this.stats.northTris = actualSelectedTris; // 58,926
+            this.stats.westTris = 58742;               // court_Red_Tribune_0 (31,200) + court_Black_Tribune_0 (27,542)
+            this.stats.eastTris = 58742;               // court_Red_Tribune_0 (31,200) + court_Black_Tribune_0 (27,542)
+            this.stats.generatedEnvTris = genTris;
+            this.stats.totalStadiumTris = this.stats.northTris + this.stats.westTris + this.stats.eastTris + this.stats.generatedEnvTris + this.stats.crowdTris;
         }
 
         buildSideStands() {
@@ -403,6 +444,8 @@
             this.crowdRoot = new THREE.Group();
             this.crowdRoot.name = "Stadium_Instanced_Crowd";
 
+            const rng = createPRNG(this.crowdSeed);
+
             // Classy European Night Palette (Navy, Slate, White, Cyan, Gold, Heather Grey - NO rainbow candy)
             const palette = [
                 new THREE.Color(0x1e3a8a), // 30% Chelsea / UEFA Navy Blue
@@ -430,13 +473,13 @@
                 for (let s = 0; s < 26; s++) {
                     // Leave aisles (gaps) every 7 seats
                     if (s === 6 || s === 7 || s === 19 || s === 20) continue;
-                    // 70% occupancy ratio
-                    if (Math.random() > 0.72) continue;
+                    // 70% occupancy ratio via deterministic seeded PRNG
+                    if (rng() > 0.72) continue;
 
-                    const posX = -11.5 + s * 0.92 + (Math.random() - 0.5) * 0.08;
+                    const posX = -11.5 + s * 0.92 + (rng() - 0.5) * 0.08;
                     crowdPosList.push({
                         pos: new THREE.Vector3(posX, rowY, rowZ),
-                        rotY: 0.0 + (Math.random() - 0.5) * 0.15
+                        rotY: 0.0 + (rng() - 0.5) * 0.15
                     });
                 }
             }
@@ -447,12 +490,12 @@
                 const rowY = 1.85 + row * 0.72;
                 for (let s = 0; s < 28; s++) {
                     if (s === 7 || s === 8 || s === 20 || s === 21) continue;
-                    if (Math.random() > 0.70) continue;
+                    if (rng() > 0.70) continue;
 
-                    const posZ = -13.0 + s * 0.95 + (Math.random() - 0.5) * 0.08;
+                    const posZ = -13.0 + s * 0.95 + (rng() - 0.5) * 0.08;
                     crowdPosList.push({
                         pos: new THREE.Vector3(rowX, rowY, posZ),
-                        rotY: Math.PI / 2 + (Math.random() - 0.5) * 0.15
+                        rotY: Math.PI / 2 + (rng() - 0.5) * 0.15
                     });
                 }
             }
@@ -463,22 +506,28 @@
                 const rowY = 1.85 + row * 0.72;
                 for (let s = 0; s < 28; s++) {
                     if (s === 7 || s === 8 || s === 20 || s === 21) continue;
-                    if (Math.random() > 0.70) continue;
+                    if (rng() > 0.70) continue;
 
-                    const posZ = -13.0 + s * 0.95 + (Math.random() - 0.5) * 0.08;
+                    const posZ = -13.0 + s * 0.95 + (rng() - 0.5) * 0.08;
                     crowdPosList.push({
                         pos: new THREE.Vector3(rowX, rowY, posZ),
-                        rotY: -Math.PI / 2 + (Math.random() - 0.5) * 0.15
+                        rotY: -Math.PI / 2 + (rng() - 0.5) * 0.15
                     });
                 }
             }
 
             const totalCount = crowdPosList.length;
-            console.log(`[FootballCourt] Instancing ${totalCount} stadium crowd members (Budget: 2 Draw Calls)...`);
+            this.stats.crowdCount = totalCount;
 
             // 2. Build 2 InstancedMeshes (Torso + Head = 2 Draw Calls total!)
             const torsoGeo = new THREE.CylinderGeometry(0.18, 0.15, 0.44, 6);
             const headGeo = new THREE.SphereGeometry(0.12, 6, 5);
+
+            const torsoTris = torsoGeo.index ? torsoGeo.index.count / 3 : torsoGeo.attributes.position.count / 3;
+            const headTris = headGeo.index ? headGeo.index.count / 3 : headGeo.attributes.position.count / 3;
+            this.stats.crowdTris = totalCount * (torsoTris + headTris);
+
+            console.log(`[FootballCourt] Instancing ${totalCount} stadium crowd members (Seed: ${this.crowdSeed}, Crowd Tris: ${this.stats.crowdTris.toLocaleString()}, Budget: 2 Draw Calls)...`);
 
             const torsoMat = new THREE.MeshStandardMaterial({
                 roughness: 0.55,
@@ -510,8 +559,8 @@
                 dummy.updateMatrix();
                 torsoInstanced.setMatrixAt(i, dummy.matrix);
 
-                // Torso color (UEFA club palette distribution)
-                const rnd = Math.random();
+                // Torso color (UEFA club palette distribution via seeded PRNG)
+                const rnd = rng();
                 if (rnd < 0.30) colorDummy.copy(palette[0]);
                 else if (rnd < 0.55) colorDummy.copy(palette[1]);
                 else if (rnd < 0.75) colorDummy.copy(palette[2]);
@@ -527,8 +576,8 @@
                 dummy.updateMatrix();
                 headInstanced.setMatrixAt(i, dummy.matrix);
 
-                // Head skin tone
-                const skinTone = skinColors[Math.floor(Math.random() * skinColors.length)];
+                // Head skin tone via seeded PRNG
+                const skinTone = skinColors[Math.floor(rng() * skinColors.length)];
                 headInstanced.setColorAt(i, skinTone);
             }
 
