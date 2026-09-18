@@ -62,7 +62,12 @@
                 shader.vertexShader = shader.vertexShader.replace(
                     '#include <defaultnormal_vertex>',
                     `#include <defaultnormal_vertex>
-                    vViewNormalV2 = normalize(normalMatrix * transformedNormal);
+                    vViewNormalV2 = normalize(transformedNormal);`
+                );
+
+                shader.vertexShader = shader.vertexShader.replace(
+                    '#include <project_vertex>',
+                    `#include <project_vertex>
                     vViewPosV2 = -mvPosition.xyz;`
                 );
 

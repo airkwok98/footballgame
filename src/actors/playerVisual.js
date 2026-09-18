@@ -54,7 +54,12 @@
                 shader.vertexShader = shader.vertexShader.replace(
                     '#include <defaultnormal_vertex>',
                     `#include <defaultnormal_vertex>
-                    vRimViewNormalV2 = normalize(normalMatrix * transformedNormal);
+                    vRimViewNormalV2 = normalize(transformedNormal);`
+                );
+
+                shader.vertexShader = shader.vertexShader.replace(
+                    '#include <project_vertex>',
+                    `#include <project_vertex>
                     vRimViewPosV2 = -mvPosition.xyz;`
                 );
 
