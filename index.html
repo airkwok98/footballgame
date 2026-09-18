@@ -475,6 +475,15 @@
 
     <!-- 离线 3D 渲染核心 -->
     <script src="libs/three.min.js"></script>
+    <!-- Visual 2.0 模块化架构 -->
+    <script src="src/rendering/quality.js"></script>
+    <script src="src/rendering/postprocessing.js"></script>
+    <script src="src/camera/cameraDirector.js"></script>
+    <script src="src/materials/ballMaterial.js"></script>
+    <script src="src/materials/flipperMaterial.js"></script>
+    <script src="src/actors/playerVisual.js"></script>
+    <script src="src/effects/goalImpactStack.js"></script>
+    <script src="src/actors/stadiumCrowd.js"></script>
 
     <script>
         /* ==========================================================================
@@ -1236,12 +1245,25 @@
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
             renderer.toneMapping = THREE.ACESFilmicToneMapping;
             renderer.toneMappingExposure = 1.18;
+
+            // Visual 2.0: 应用动态质量档位策略 (Desktop High / Mobile Medium / Low)
+            if (window.Visual2 && window.Visual2.quality) {
+                window.Visual2.quality.applyToRenderer(renderer);
+            }
             container.appendChild(renderer.domElement);
+
+            // Visual 2.0: 接入后处理与相机导演系统
+            if (window.Visual2 && window.Visual2.postprocessing) {
+                window.Visual2.postprocessing.init(renderer, scene, camera);
+            }
+            if (window.Visual2 && window.Visual2.cameraDirector) {
+                window.Visual2.cameraDirector.init(camera, targetCamPos, targetCamLook, 48);
+            }
 
             const amb = new THREE.AmbientLight(0xdbeafe, 0.45);
             scene.add(amb);
 
-            // 主漫射光：提供整体草坪微观反光
+            // 主漫射光：提供整体草坪微观反光与唯一高质量主软阴影 (单 Shadow Pass 铁律)
             const sun = new THREE.DirectionalLight(0xfffaed, 0.75);
             sun.position.set(12, 38, 14);
             sun.castShadow = true;
@@ -1261,7 +1283,7 @@
             flood.position.set(-14, 28, -18);
             scene.add(flood);
 
-            // 欧冠标志性四角探照灯塔定向聚光（真实 4 道交叉立体软阴影）
+            // 欧冠标志性四角探照灯塔定向聚光（纯高光定向照射与 Fake 光锥，避免重复 Shadow Pass）
             const towerCoords = [
                 { x: -11.0, z: -16.8, tx: -1.2, tz: -3.0 },
                 { x: 11.0, z: -16.8, tx: 1.2, tz: -3.0 },
@@ -1276,12 +1298,7 @@
                 spot.angle = Math.PI / 3.4;
                 spot.penumbra = 0.65;
                 spot.distance = 55;
-                spot.castShadow = true;
-                spot.shadow.mapSize.width = 1024;
-                spot.shadow.mapSize.height = 1024;
-                spot.shadow.camera.near = 5;
-                spot.shadow.camera.far = 50;
-                spot.shadow.bias = -0.0006;
+                spot.castShadow = false; // Visual 2.0 优化：消除 4 次昂贵阴影通道，极大释放移动端 GPU
                 scene.add(spot);
                 towerSpotLights.push(spot);
             });
@@ -1868,12 +1885,19 @@
             });
 
             leftFlipper.mesh = makePaddle(G.flipperL, flipperMat, false);
+            leftFlipper.paddleMesh = leftFlipper.mesh.children[0];
             leftFlipper.mesh.position.set(leftFlipper.px, 0.45, leftFlipper.pz);
             scene.add(leftFlipper.mesh);
 
             rightFlipper.mesh = makePaddle(G.flipperL, flipperMat, true);
+            rightFlipper.paddleMesh = rightFlipper.mesh.children[0];
             rightFlipper.mesh.position.set(rightFlipper.px, 0.45, rightFlipper.pz);
             scene.add(rightFlipper.mesh);
+
+            // Visual 2.0: 机械挡杆材质与 Sweet Spot 击打反馈强化
+            if (window.Visual2 && window.Visual2.flippers) {
+                window.Visual2.flippers.applyToFlippers(leftFlipper, rightFlipper);
+            }
         }
 
         function makePaddle(len, mat, isRight) {
@@ -1913,6 +1937,12 @@
             ball.mesh = new THREE.Mesh(geo, mat);
             ball.mesh.castShadow = true;
             scene.add(ball.mesh);
+
+            // Visual 2.0: 升级 PBR 真实皮革反光与 Rocket Shot 菲涅尔能量着色器
+            if (window.Visual2 && window.Visual2.ball) {
+                window.Visual2.ball.init(ball.mesh, { classic: textures.classic, magma: textures.magma });
+            }
+
             resetBall();
         }
 
@@ -3130,10 +3160,12 @@
 
         function makeHumanoid(jersey, shorts, boots, role, cfg = {}) {
             const root = new THREE.Group();
-            const skinMat = new THREE.MeshStandardMaterial({ color: 0xfbcfe8, roughness: 0.55 });
-            const jerseyMat = new THREE.MeshStandardMaterial({ color: jersey, roughness: 0.45 });
-            const shortsMat = new THREE.MeshStandardMaterial({ color: shorts, roughness: 0.50 });
-            const bootsMat = new THREE.MeshStandardMaterial({ color: boots, roughness: 0.35 });
+            // Visual 2.0: 边缘轮廓光注入 (Fake Rim Light)，使角色从深色球场背景中立体分离
+            const pPipe = window.Visual2 && window.Visual2.players;
+            const skinMat = pPipe ? pPipe.createRimLitMaterial({ color: 0xfbcfe8, roughness: 0.55, rimIntensity: 0.45 }) : new THREE.MeshStandardMaterial({ color: 0xfbcfe8, roughness: 0.55 });
+            const jerseyMat = pPipe ? pPipe.createRimLitMaterial({ color: jersey, roughness: 0.35, rimIntensity: 0.95 }) : new THREE.MeshStandardMaterial({ color: jersey, roughness: 0.45 });
+            const shortsMat = pPipe ? pPipe.createRimLitMaterial({ color: shorts, roughness: 0.45, rimIntensity: 0.65 }) : new THREE.MeshStandardMaterial({ color: shorts, roughness: 0.50 });
+            const bootsMat = pPipe ? pPipe.createRimLitMaterial({ color: boots, roughness: 0.25, metalness: 0.35, rimIntensity: 0.55 }) : new THREE.MeshStandardMaterial({ color: boots, roughness: 0.35 });
 
             // 0. 脚底柔和环境光遮挡接触阴影圆盘 (AO Contact Shadow Decal)
             const shadowDisc = new THREE.Mesh(
@@ -3613,6 +3645,20 @@
                     lastTrailZ = ball.z;
                     spawnImpactSmokeBurst(ball.x, ball.z, nx, nz, isSweetSpot);
 
+                    // Visual 2.0: 接入挡杆冲击光闪烁、相机震颤冲拳与足球 Rocket Shot 能量状态
+                    if (window.Visual2) {
+                        if (window.Visual2.flippers) window.Visual2.flippers.triggerImpactFlash(isRight, isSweetSpot);
+                        if (isSweetSpot) {
+                            if (window.Visual2.cameraDirector) window.Visual2.cameraDirector.triggerRocketShot(nx, nz, 0.35);
+                            if (window.Visual2.postprocessing) window.Visual2.postprocessing.triggerExposurePulse(1.35, 160, 'gold');
+                            if (window.Visual2.ball) window.Visual2.ball.setRocketState(true, 1.25);
+                        } else {
+                            if (window.Visual2.cameraDirector) window.Visual2.cameraDirector.triggerSweetSpot(0.12);
+                            if (window.Visual2.postprocessing) window.Visual2.postprocessing.triggerExposurePulse(1.15, 90, 'cyan');
+                            if (window.Visual2.ball) window.Visual2.ball.setRocketState(false, 0.0);
+                        }
+                    }
+
                     screenShake = isSweetSpot ? 0.8 : 0.4;
                     Sound.play(isSweetSpot ? 'kick_crit' : 'kick', 1.0, isSweetSpot ? 1.0 : 1.1);
                     spawnSparks(ball.x, 0.5, ball.z, isSweetSpot ? 0xfacc15 : 0xffffff);
@@ -3623,6 +3669,9 @@
                         setTimeout(() => crit.classList.remove('show'), 600);
                     }
                 } else {
+                    if (window.Visual2 && window.Visual2.flippers) {
+                        window.Visual2.flippers.triggerImpactFlash(isRight, false);
+                    }
                     const dot = ball.vx * nx + ball.vz * nz;
                     if (dot < 0) {
                         ball.vx -= 1.82 * dot * nx;
@@ -3991,6 +4040,11 @@
         }
 
         function triggerGoal() {
+            // Visual 2.0: 触发进球全流程冲击栈 (Hit Stop -> Camera Punch -> Net Stress -> Exposure Pulse -> Confetti)
+            if (window.Visual2 && window.Visual2.goalImpact) {
+                window.Visual2.goalImpact.execute(ball ? ball.mesh : null, topGoalNet);
+            }
+
             screenShake = 1.0;
             goalCelebrationTimer = 1.65;
             Sound.play('goal', 1.0);
@@ -4076,6 +4130,11 @@
                 }
                 if (e.key === 'v' || e.key === 'V') {
                     toggleCameraMode();
+                }
+                if (e.key === '`' || e.key === '~' || e.key === 'F3') {
+                    if (window.Visual2 && window.Visual2.quality) {
+                        window.Visual2.quality.toggleDebug();
+                    }
                 }
             });
 
@@ -4213,12 +4272,25 @@
             requestAnimationFrame(animate);
             const dt = Math.min(clock.getDelta(), 0.033);
 
+            // Visual 2.0: 开始帧计时与性能统计
+            if (window.Visual2 && window.Visual2.quality) {
+                window.Visual2.quality.beginFrame();
+            }
+
             physicsTick(dt);
             updateParticles(dt);
             updateSmokeSystem(dt);
             updateStadiumAtmosphere(dt);
             const elapsedTime = clock.getElapsedTime();
             updateStadiumCrowd(dt, elapsedTime);
+
+            // Visual 2.0: 模块化系统逐帧状态更新
+            if (window.Visual2) {
+                if (window.Visual2.ball) window.Visual2.ball.update(dt);
+                if (window.Visual2.flippers) window.Visual2.flippers.update(dt);
+                if (window.Visual2.postprocessing) window.Visual2.postprocessing.update(dt);
+                if (window.Visual2.goalImpact) window.Visual2.goalImpact.update(dt);
+            }
 
             // 3D 角旗随场馆微风自然飘扬 (Dynamic Stadium Breeze)
             for (let i = 0; i < cornerFlags.length; i++) {
@@ -4265,7 +4337,18 @@
             camera.position.set(camX, camY, camZ);
             camera.lookAt(currentCamLook.x + (ball ? ball.x * 0.02 : 0), currentCamLook.y, currentCamLook.z);
 
+            // Visual 2.0: 相机导演介入 (Sweet Spot / Rocket Shot / Goal Punch)
+            if (window.Visual2 && window.Visual2.cameraDirector) {
+                window.Visual2.cameraDirector.setBase(camera.position, currentCamLook, currentCameraMode === 'top' ? 52 : 48);
+                window.Visual2.cameraDirector.update(dt);
+            }
+
             renderer.render(scene, camera);
+
+            // Visual 2.0: 记录渲染性能指标 (Draw calls, Tris, Mem)
+            if (window.Visual2 && window.Visual2.quality) {
+                window.Visual2.quality.recordRendererInfo(renderer, 7);
+            }
         }
     </script>
 </body>
