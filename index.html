@@ -2550,6 +2550,11 @@
             scene.add(camGroup);
 
             // 8. 高空悬挑钢桁架顶棚 (Stadium Cantilever Roof Trusses)
+            const legacyRoofTrussGroup = new THREE.Group();
+            legacyRoofTrussGroup.name = "LegacyRoofTrussGroup";
+            scene.add(legacyRoofTrussGroup);
+            window.legacyRoofTrussGroup = legacyRoofTrussGroup;
+
             const trussMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, metalness: 0.75, roughness: 0.25 });
             [-1, 1].forEach(side => {
                 const trussGroup = new THREE.Group();
@@ -2563,7 +2568,7 @@
                     pod.position.set(side * 9.5, 16.2, tz);
                     trussGroup.add(pod);
                 }
-                scene.add(trussGroup);
+                legacyRoofTrussGroup.add(trussGroup);
             });
 
             // External 3D Asset: 若开启 ?assets=external，加载真实 Cheltenham 3D 足球场环境 (POC)
@@ -2940,6 +2945,11 @@
             // ==========================================
             // B. 左右边线看台 (Sideline Grandstands)
             // ==========================================
+            const sideGrandstandGroup = new THREE.Group();
+            sideGrandstandGroup.name = "ProceduralSideGrandstandGroup";
+            scene.add(sideGrandstandGroup);
+            window.proceduralSideGrandstandGroup = sideGrandstandGroup;
+
             const sideTiers = [
                 { offset: 9.6, y: 0.20, h: 0.40, w: 1.6 },
                 { offset: 11.3, y: 0.42, h: 0.84, w: 1.6 },
@@ -2953,7 +2963,7 @@
                     mesh.position.set(dir * t.offset, t.y, 1.0);
                     mesh.castShadow = true;
                     mesh.receiveShadow = true;
-                    scene.add(mesh);
+                    sideGrandstandGroup.add(mesh);
                 });
 
                 // 2. 边线观众排布 (前 2 级阶梯，每级 15 人 = 30 人 × 2 侧 = 60 位人形球迷)
@@ -2973,7 +2983,7 @@
                         const spec = createSingleSpectator(kit, skin, hair, pose);
                         spec.root.position.set(dir * tier.offset, surfaceY, startZ + i * stepZ + (Math.random() - 0.5) * 0.1);
                         spec.root.rotation.y = (dir > 0 ? -Math.PI / 2 : Math.PI / 2); // 面朝赛场
-                        scene.add(spec.root);
+                        sideGrandstandGroup.add(spec.root);
                         stadiumSpectators.push(spec);
                     }
                 });
@@ -2992,12 +3002,12 @@
                     sideStripMesh.position.set(dir * 13.0, 2.0, 1.0);
                     sideStripMesh.rotation.y = (dir > 0 ? -Math.PI / 2 : Math.PI / 2);
                     sideStripMesh.rotation.z = dir * 0.45; // 倾角仰面朝向俯视镜头
-                    scene.add(sideStripMesh);
+                    sideGrandstandGroup.add(sideStripMesh);
                 }
 
                 // 4. 边线 3D 挥舞队旗
-                createWavingFlag(dir * 11.3, 0.84, -6.0, dir * 0.8, '#f59e0b', '#0f172a');
-                createWavingFlag(dir * 11.3, 0.84, 8.0, dir * 0.8, '#3b82f6', '#ffffff');
+                createWavingFlag(dir * 11.3, 0.84, -6.0, dir * 0.8, '#f59e0b', '#0f172a', sideGrandstandGroup);
+                createWavingFlag(dir * 11.3, 0.84, 8.0, dir * 0.8, '#3b82f6', '#ffffff', sideGrandstandGroup);
             });
         }
 
