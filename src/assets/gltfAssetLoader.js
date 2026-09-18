@@ -7,11 +7,13 @@
     'use strict';
 
     const params = new URLSearchParams(window.location.search);
-    const modeParam = params.get('assets');
-    // Default to 'legacy' unless explicitly specified as 'external'
-    const currentMode = (modeParam === 'external') ? 'external' : 'legacy';
+    const modeParam = (params.get('assets') || '').toLowerCase();
+    const stadiumParam = (params.get('stadium') || '').toLowerCase();
+    // Default to 'legacy' unless external assets or cheltenham POC requested
+    const isExternal = (modeParam === 'external' || modeParam === 'cheltenham' || stadiumParam === 'cheltenham');
+    const currentMode = isExternal ? 'external' : 'legacy';
 
-    console.log(`[AssetLoader] Initializing asset mode: ${currentMode} (URL param: ?assets=${modeParam || 'none'})`);
+    console.log(`[AssetLoader] Initializing asset mode: ${currentMode} (URL params: assets=${modeParam || 'none'}, stadium=${stadiumParam || 'none'})`);
 
     const loaderCache = new Map();
 

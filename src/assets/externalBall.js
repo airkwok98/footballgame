@@ -50,6 +50,50 @@
 
         setupModel(sceneModel) {
             this.modelScene = sceneModel;
+            this.modelScene.updateMatrixWorld(true);
+
+            // 0. 按照材质聚合合并 BufferGeometry (将 32 个独立面板合并为 2~3 个网格，大幅削减 Draw Calls)
+            let optimizedModel = this.modelScene;
+            try {
+                if (typeof THREE.BufferGeometryUtils !== 'undefined' && THREE.BufferGeometryUtils.mergeBufferGeometries) {
+                    const matGroups = new Map();
+                    this.modelScene.traverse(child => {
+                        if (child.isMesh && child.material && child.geometry) {
+                            const mat = child.material;
+                            if (!matGroups.has(mat)) {
+                                matGroups.set(mat, []);
+                            }
+                            const clonedGeom = child.geometry.clone();
+                            child.updateWorldMatrix(true, false);
+                            clonedGeom.applyMatrix4(child.matrixWorld);
+                            matGroups.get(mat).push(clonedGeom);
+                        }
+                    });
+
+                    if (matGroups.size > 0) {
+                        const mergedGroup = new THREE.Group();
+                        mergedGroup.name = "MergedBallModel";
+                        matGroups.forEach((geoms, mat) => {
+                            const mergedGeom = THREE.BufferGeometryUtils.mergeBufferGeometries(geoms, false);
+                            if (mergedGeom) {
+                                const mesh = new THREE.Mesh(mergedGeom, mat);
+                                mesh.castShadow = true;
+                                mesh.receiveShadow = true;
+                                mergedGroup.add(mesh);
+                            }
+                        });
+                        if (mergedGroup.children.length > 0) {
+                            console.log(`[ExternalBall] Geometry Merge: successfully reduced meshes from 32 to ${mergedGroup.children.length} by material!`);
+                            optimizedModel = mergedGroup;
+                        }
+                    }
+                }
+            } catch (mergeErr) {
+                console.warn('[ExternalBall] BufferGeometry merge failed, falling back to original meshes:', mergeErr);
+                optimizedModel = this.modelScene;
+            }
+
+            this.modelScene = optimizedModel;
 
             // 1. 计算未变换状态下的原始包围盒与几何中心
             const box = new THREE.Box3().setFromObject(this.modelScene);

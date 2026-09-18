@@ -1,10 +1,20 @@
 /**
  * Soccer Pinball 3D - External Stadium GLTF Integration
- * Manages Cheltenham Stadium Background Model, Alignment, Bounds, and Fallback
+ * 
+ * POC STATUS: POC_REJECTED_PHOTOGRAMMETRY_ASSET
+ * 
+ * Production Decision:
+ * - Cheltenham photogrammetry drone scan contains 858,030 triangles (90%+ of total scene load).
+ * - Baked unlit daytime sunlight (KHR_materials_unlit) clashing with Visual 2.0 night aesthetic.
+ * - Jagged scan boundaries and photogrammetry mesh artifacts.
+ * - REJECTED FOR PRODUCTION. Default / external asset mode strictly keeps procedural stadium.
+ * - Kept purely as POC archive, only loaded when explicitly requested via ?stadium=cheltenham or ?assets=cheltenham.
  */
 
 (function(root) {
     'use strict';
+
+    const POC_STATUS = "POC_REJECTED_PHOTOGRAMMETRY_ASSET";
 
     class ExternalStadiumController {
         constructor() {
@@ -14,26 +24,33 @@
             this.sceneRef = null;
             this.scaleFactor = 1.0;
             this.importedBounds = null;
+            this.pocStatus = POC_STATUS;
         }
 
         async init(scene, G, proceduralAtmosphere = {}) {
             this.sceneRef = scene;
 
-            if (!root.AssetManager || !root.AssetManager.isExternal) {
-                console.log('[ExternalStadium] Asset mode is legacy. Using procedural atmosphere.');
+            const params = new URLSearchParams(window.location.search);
+            const stadiumParam = (params.get('stadium') || '').toLowerCase();
+            const assetsParam = (params.get('assets') || '').toLowerCase();
+            const allowCheltenhamPoc = (stadiumParam === 'cheltenham' || assetsParam === 'cheltenham');
+
+            if (!allowCheltenhamPoc) {
+                console.log(`[ExternalStadium] POC Status: ${POC_STATUS}. Production mode active - Cheltenham photogrammetry stadium is REJECTED and disabled. Using procedural stadium environment.`);
+                this.active = false;
                 return;
             }
 
-            console.log('[ExternalStadium] Initiating external Cheltenham Stadium load...');
+            console.warn(`[ExternalStadium] WARNING: Loading ${POC_STATUS} for POC evaluation only (?stadium=cheltenham or ?assets=cheltenham). Heavy load (858k triangles).`);
             const modelUrl = 'assets/models/stadium/cheltenham_football_pitch_gltf/scene.gltf';
 
             try {
                 const gltf = await root.AssetManager.load(modelUrl);
                 this.setupModel(gltf, G, proceduralAtmosphere);
                 this.active = true;
-                console.log(`[ExternalStadium] Successfully integrated external stadium environment.`);
+                console.log(`[ExternalStadium] Successfully loaded Cheltenham POC environment.`);
             } catch (err) {
-                console.warn('[ExternalStadium] Failed to load external stadium. Falling back to procedural atmosphere:', err);
+                console.warn('[ExternalStadium] Failed to load Cheltenham POC model:', err);
                 this.active = false;
             }
         }

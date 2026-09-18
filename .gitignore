@@ -1,4 +1,4 @@
-﻿# Temporary test captures
+# Temporary test captures
 test_*.png
 
 # Research & reference raw media
@@ -15,3 +15,8 @@ __pycache__/
 Thumbs.db
 .vscode/
 .idea/
+
+# Large 3D Models & Test Scaffolding
+assets/models/
+.scratch/
+.agents/
