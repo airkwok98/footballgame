@@ -1949,6 +1949,10 @@
         function resetBall(mode = null) {
             comboCount = 0;
             ballSlipstreamTimer = 0;
+            ballSlipstreamCrit = false;
+            if (window.Visual2 && window.Visual2.ball) {
+                window.Visual2.ball.reset();
+            }
             goalState.active = false;
             goalState.netSoundPlayed = false;
             topGoalNet.reset();
@@ -3159,13 +3163,21 @@
         }
 
         function makeHumanoid(jersey, shorts, boots, role, cfg = {}) {
+            // Visual 2.0: 健美实体球员完整管线（纯正视图空间边缘光，厚重实体肌肉身形与脚底阴影）
+            if (window.Visual2 && window.Visual2.players && window.Visual2.players.createAthleticPlayer) {
+                const helpers = {
+                    getShadowDiscTexture: getShadowDiscTexture,
+                    getNumberBadgeTexture: getNumberBadgeTexture
+                };
+                return window.Visual2.players.createAthleticPlayer(helpers, jersey, shorts, boots, role, cfg);
+            }
+
             const root = new THREE.Group();
-            // Visual 2.0: 边缘轮廓光注入 (Fake Rim Light)，使角色从深色球场背景中立体分离
             const pPipe = window.Visual2 && window.Visual2.players;
-            const skinMat = pPipe ? pPipe.createRimLitMaterial({ color: 0xfbcfe8, roughness: 0.55, rimIntensity: 0.45 }) : new THREE.MeshStandardMaterial({ color: 0xfbcfe8, roughness: 0.55 });
-            const jerseyMat = pPipe ? pPipe.createRimLitMaterial({ color: jersey, roughness: 0.35, rimIntensity: 0.95 }) : new THREE.MeshStandardMaterial({ color: jersey, roughness: 0.45 });
-            const shortsMat = pPipe ? pPipe.createRimLitMaterial({ color: shorts, roughness: 0.45, rimIntensity: 0.65 }) : new THREE.MeshStandardMaterial({ color: shorts, roughness: 0.50 });
-            const bootsMat = pPipe ? pPipe.createRimLitMaterial({ color: boots, roughness: 0.25, metalness: 0.35, rimIntensity: 0.55 }) : new THREE.MeshStandardMaterial({ color: boots, roughness: 0.35 });
+            const skinMat = pPipe ? pPipe.createRimLitMaterial({ color: 0xfbcfe8, roughness: 0.55, rimIntensity: 0.35 }) : new THREE.MeshStandardMaterial({ color: 0xfbcfe8, roughness: 0.55, transparent: false, depthWrite: true });
+            const jerseyMat = pPipe ? pPipe.createRimLitMaterial({ color: jersey, roughness: 0.38, rimIntensity: 0.50 }) : new THREE.MeshStandardMaterial({ color: jersey, roughness: 0.45, transparent: false, depthWrite: true });
+            const shortsMat = pPipe ? pPipe.createRimLitMaterial({ color: shorts, roughness: 0.48, rimIntensity: 0.40 }) : new THREE.MeshStandardMaterial({ color: shorts, roughness: 0.50, transparent: false, depthWrite: true });
+            const bootsMat = pPipe ? pPipe.createRimLitMaterial({ color: boots, roughness: 0.30, metalness: 0.25, rimIntensity: 0.45 }) : new THREE.MeshStandardMaterial({ color: boots, roughness: 0.35, transparent: false, depthWrite: true });
 
             // 0. 脚底柔和环境光遮挡接触阴影圆盘 (AO Contact Shadow Decal)
             const shadowDisc = new THREE.Mesh(
@@ -3435,6 +3447,14 @@
             }
 
             ball.speed = Math.hypot(ball.vx, ball.vz);
+
+            // 当球速减慢至普通巡航速度或静止时，主动释放 Rocket 状态与暴击尾迹
+            if (ball.speed < 12.0 && ballSlipstreamCrit) {
+                ballSlipstreamCrit = false;
+                if (window.Visual2 && window.Visual2.ball) {
+                    window.Visual2.ball.setRocketState(false, 0.0);
+                }
+            }
 
             // 击中挡杆飞出后的 1~1.5 秒破空气流与立体烟雾拖尾
             if (ballSlipstreamTimer > 0 && !goalState.active) {
@@ -3915,6 +3935,8 @@
                     ball.vz = kickSpeed;
                     c.kickCooldown = 0.75;
                     ballSlipstreamTimer = 0;
+                    ballSlipstreamCrit = false;
+                    if (window.Visual2 && window.Visual2.ball) window.Visual2.ball.reset();
                     screenShake = 0.28;
                     Sound.play('kick', 1.0, 0.95);
                     spawnSparks(ball.x, 0.5, ball.z, 0x60a5fa);
@@ -3981,6 +4003,8 @@
                     }
 
                     ballSlipstreamTimer = 0;
+                    ballSlipstreamCrit = false;
+                    if (window.Visual2 && window.Visual2.ball) window.Visual2.ball.reset();
                 }
             }
         }
@@ -4040,6 +4064,11 @@
         }
 
         function triggerGoal() {
+            ballSlipstreamCrit = false;
+            if (window.Visual2 && window.Visual2.ball) {
+                window.Visual2.ball.reset();
+            }
+
             // Visual 2.0: 触发进球全流程冲击栈 (Hit Stop -> Camera Punch -> Net Stress -> Exposure Pulse -> Confetti)
             if (window.Visual2 && window.Visual2.goalImpact) {
                 window.Visual2.goalImpact.execute(ball ? ball.mesh : null, topGoalNet);
@@ -4057,6 +4086,11 @@
         }
 
         function triggerDrain() {
+            ballSlipstreamCrit = false;
+            if (window.Visual2 && window.Visual2.ball) {
+                window.Visual2.ball.reset();
+            }
+
             screenShake = 0.6;
             Sound.play('drain', 1.0);
             setTimeout(() => Sound.play('whistle', 0.65), 280);
@@ -4171,16 +4205,28 @@
             document.getElementById('btn-skin').addEventListener('click', () => {
                 if (currentSkin === 'classic') {
                     currentSkin = 'magma';
-                    if (textures.magma) {
+                    if (window.Visual2 && window.Visual2.ball) {
+                        window.Visual2.ball.setSkin('magma', textures.magma);
+                    } else if (textures.magma) {
                         ball.mesh.material.map = textures.magma;
+                        ball.mesh.material.transparent = false;
+                        ball.mesh.material.opacity = 1.0;
+                        ball.mesh.material.depthWrite = true;
                         ball.mesh.material.needsUpdate = true;
                     }
+                    showPitchToast('⚽ 皮肤切换：熔岩烈焰 (Magma Core)');
                 } else {
                     currentSkin = 'classic';
-                    if (textures.classic) {
+                    if (window.Visual2 && window.Visual2.ball) {
+                        window.Visual2.ball.setSkin('classic', textures.classic);
+                    } else if (textures.classic) {
                         ball.mesh.material.map = textures.classic;
+                        ball.mesh.material.transparent = false;
+                        ball.mesh.material.opacity = 1.0;
+                        ball.mesh.material.depthWrite = true;
                         ball.mesh.material.needsUpdate = true;
                     }
+                    showPitchToast('⚽ 皮肤切换：经典黑白 (Classic Star)');
                 }
             });
 
