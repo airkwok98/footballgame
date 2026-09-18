@@ -1,11 +1,12 @@
 /**
- * externalPlayer.js — External Humanoid Animation Pipeline POC
+ * externalPlayer.js — External Humanoid Animation Pipeline Hardening
  * 
  * 职责：
  * 1. 纯工程 Technical Dummy (Alien Soldier / Mixamo 66-Joint Skeleton)
  * 2. 验证 SkinnedMesh、SkeletonUtils clone、AnimationMixer、In-Place 动画转换
  * 3. 严格实现 Gameplay 刚体物理与 Visual 视觉外皮的完全解耦
  * 4. 100% 维持 Legacy Player 对象接口契约 (不破坏 updateCPUDefender 与锦标赛)
+ * 5. 确立 Mixamo-Compatible Replacement Path Established
  */
 
 (function (root) {
@@ -19,12 +20,70 @@
         return clean;
     }
 
+    // 辅助工具：材质数组安全遍历
+    function forEachMaterial(material, fn) {
+        if (!material) return;
+        if (Array.isArray(material)) {
+            for (let i = 0; i < material.length; i++) {
+                if (material[i]) fn(material[i]);
+            }
+        } else {
+            fn(material);
+        }
+    }
+
+    // 辅助工具：全属性深度纹理收集 (支持任意材质属性与材质数组)
+    function collectMaterialTextures(material, texSet) {
+        if (!material || !texSet) return;
+        forEachMaterial(material, (mat) => {
+            for (let prop in mat) {
+                try {
+                    const val = mat[prop];
+                    if (val && (val.isTexture || (typeof THREE !== 'undefined' && val instanceof THREE.Texture))) {
+                        texSet.add(val);
+                    }
+                } catch (e) {}
+            }
+        });
+    }
+
+    // 辅助工具：稳健动画轨道节点名解析
+    function extractTrackNodeName(trackName) {
+        if (!trackName) return '';
+        if (typeof THREE !== 'undefined' && THREE.PropertyBinding && THREE.PropertyBinding.parseTrackName) {
+            try {
+                const parsed = THREE.PropertyBinding.parseTrackName(trackName);
+                if (parsed && (parsed.nodeName || parsed.objectName)) {
+                    return parsed.nodeName || parsed.objectName;
+                }
+            } catch (e) {}
+        }
+        // Fallback: 支持 .bones[Name].position, Armature/Name.position, Name.position
+        const bracketMatch = trackName.match(/\[([^\]]+)\]/);
+        if (bracketMatch && bracketMatch[1]) {
+            return bracketMatch[1];
+        }
+        const dotIdx = trackName.indexOf('.');
+        if (dotIdx !== -1) {
+            const pre = trackName.substring(0, dotIdx);
+            const slashIdx = pre.lastIndexOf('/');
+            return slashIdx !== -1 ? pre.substring(slashIdx + 1) : pre;
+        }
+        return trackName;
+    }
+
     class ExternalPlayerAsset {
         constructor() {
             this.loaded = false;
             this.sourceScene = null;
             this.sourceClips = [];
             this.runInPlaceClip = null;
+
+            // 共享 Contact Shadow 资源 (Manager/Asset 级单例，全员复用)
+            this.sharedShadowTexture = null;
+            this.sharedShadowGeometry = null;
+            this.sharedShadowMaterial = null;
+
             this.stats = {
                 triangles: 0,
                 vertices: 0,
@@ -43,6 +102,28 @@
             };
         }
 
+        initSharedContactShadow() {
+            if (this.sharedShadowMaterial) return;
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            grad.addColorStop(0.0, 'rgba(5, 10, 20, 0.75)');
+            grad.addColorStop(0.5, 'rgba(5, 10, 20, 0.35)');
+            grad.addColorStop(1.0, 'rgba(5, 10, 20, 0.0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 64, 64);
+
+            this.sharedShadowTexture = new THREE.CanvasTexture(canvas);
+            this.sharedShadowGeometry = new THREE.PlaneGeometry(0.95, 0.95);
+            this.sharedShadowMaterial = new THREE.MeshBasicMaterial({
+                map: this.sharedShadowTexture,
+                transparent: true,
+                opacity: 0.85,
+                depthWrite: false
+            });
+        }
+
         async load(modelUrl) {
             return new Promise((resolve, reject) => {
                 const loader = new THREE.GLTFLoader();
@@ -51,6 +132,7 @@
                     (gltf) => {
                         try {
                             this.processGltf(gltf);
+                            this.initSharedContactShadow();
                             this.loaded = true;
                             resolve(this);
                         } catch (err) {
@@ -73,17 +155,16 @@
             let boneCount = 0;
             const matSet = new Set();
             const texSet = new Set();
-            let hipsBone = null;
+            let candidateHips = null;
+            let candidateRoot = null;
 
             this.sourceScene.traverse((child) => {
                 if (child.isSkinnedMesh) {
                     skinnedMeshCount++;
-                    if (child.material) {
-                        matSet.add(child.material);
-                        ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap'].forEach((mapProp) => {
-                            if (child.material[mapProp]) texSet.add(child.material[mapProp]);
-                        });
-                    }
+                    forEachMaterial(child.material, (mat) => {
+                        matSet.add(mat);
+                        collectMaterialTextures(mat, texSet);
+                    });
                     const geo = child.geometry;
                     if (geo) {
                         const tris = geo.index ? geo.index.count / 3 : (geo.attributes.position ? geo.attributes.position.count / 3 : 0);
@@ -95,12 +176,17 @@
                 if (child.isBone) {
                     boneCount++;
                     const norm = normalizeMixamoBoneName(child.name).toLowerCase();
-                    if (norm === 'hips' || norm === 'root') {
-                        hipsBone = child;
+                    // 优先级 1: 规范化骨骼名精确匹配 hips
+                    if (norm === 'hips' && !candidateHips) {
+                        candidateHips = child;
+                    } else if (norm === 'root' && !candidateRoot) {
+                        // 优先级 2: root 备选
+                        candidateRoot = child;
                     }
                 }
             });
 
+            const hipsBone = candidateHips || candidateRoot;
             this.stats.triangles = totalTris;
             this.stats.vertices = totalVerts;
             this.stats.skinnedMeshes = skinnedMeshCount;
@@ -124,19 +210,18 @@
                 this.runInPlaceClip = this.buildInPlaceClip(rawClip, this.stats.hipsBoneName);
             }
 
-            console.log(`[ExternalPlayer] Template Loaded: ${this.stats.triangles.toLocaleString()} tris, ${this.stats.bones} bones, Scale: ${this.stats.scale.toFixed(4)}, FootY: ${this.stats.footOffsetY.toFixed(4)}`);
+            console.log(`[ExternalPlayer] Template Loaded: ${this.stats.triangles.toLocaleString()} tris, ${this.stats.bones} bones, Scale: ${this.stats.scale.toFixed(4)}, FootY: ${this.stats.footOffsetY.toFixed(4)}, Hips: ${this.stats.hipsBoneName}`);
         }
 
         buildInPlaceClip(originalClip, hipsBoneName) {
-            // 深拷贝原动画剪辑，绝对不污染原始 Clip 数据
             const clipClone = originalClip.clone();
             clipClone.name = 'run_in_place';
 
             let hipsPosTrack = null;
             for (let track of clipClone.tracks) {
                 if (track.name.endsWith('.position')) {
-                    const trackBoneName = track.name.split('.')[0];
-                    if (trackBoneName === hipsBoneName || normalizeMixamoBoneName(trackBoneName).toLowerCase() === 'hips') {
+                    const nodeName = extractTrackNodeName(track.name);
+                    if (nodeName === hipsBoneName || normalizeMixamoBoneName(nodeName).toLowerCase() === 'hips') {
                         hipsPosTrack = track;
                         break;
                     }
@@ -188,7 +273,6 @@
             this.clonedModel = THREE.SkeletonUtils.clone(asset.sourceScene);
 
             // 2. 建立 Gameplay 与 Visual 分离的层级结构
-            // ActorRoot (Gameplay 空间，接受 updateCPUDefender 的位置、旋转与跳跃位移)
             this.actorRoot = new THREE.Group();
             this.actorRoot.name = `ExternalPlayer_ActorRoot_${cfg.number || role}`;
             this.actorRoot.position.set(cfg.baseX || 0, 0, cfg.baseZ || 0);
@@ -198,8 +282,7 @@
             this.visualRoot.name = `ExternalVisualRoot`;
             this.visualRoot.position.set(0, asset.stats.footOffsetY, 0);
             this.visualRoot.scale.setScalar(asset.stats.scale);
-            // 默认面向比赛前方 (+Z)
-            this.visualRoot.rotation.y = 0;
+            this.visualRoot.rotation.y = 0; // 默认面向比赛前方 (+Z)
             this.visualRoot.add(this.clonedModel);
             this.actorRoot.add(this.visualRoot);
 
@@ -208,14 +291,13 @@
                 if (child.isSkinnedMesh) {
                     child.castShadow = false;
                     child.receiveShadow = true;
-                    // 确保材质正常接收场景天幕与探照灯环境
-                    if (child.material) {
-                        child.material.roughness = Math.max(0.4, child.material.roughness || 0.5);
-                    }
+                    forEachMaterial(child.material, (mat) => {
+                        mat.roughness = Math.max(0.4, mat.roughness || 0.5);
+                    });
                 }
             });
 
-            // 4. 脚底柔和接触阴影圆盘 (AO Contact Shadow Decal，确保视觉稳稳贴在草坪上)
+            // 4. 脚底柔和接触阴影圆盘 (共享 Geometry / Material / Texture)
             this.addContactShadowDisc();
 
             // 5. 建立不可见的 Proxy 节点，满足 Legacy updateCPUDefender 接口契约
@@ -273,25 +355,10 @@
         }
 
         addContactShadowDisc() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 64; canvas.height = 64;
-            const ctx = canvas.getContext('2d');
-            const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
-            grad.addColorStop(0.0, 'rgba(5, 10, 20, 0.75)');
-            grad.addColorStop(0.5, 'rgba(5, 10, 20, 0.35)');
-            grad.addColorStop(1.0, 'rgba(5, 10, 20, 0.0)');
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, 64, 64);
-            const discTex = new THREE.CanvasTexture(canvas);
-
+            this.asset.initSharedContactShadow();
             const shadowDisc = new THREE.Mesh(
-                new THREE.PlaneGeometry(0.95, 0.95),
-                new THREE.MeshBasicMaterial({
-                    map: discTex,
-                    transparent: true,
-                    opacity: 0.85,
-                    depthWrite: false
-                })
+                this.asset.sharedShadowGeometry,
+                this.asset.sharedShadowMaterial
             );
             shadowDisc.rotation.x = -Math.PI / 2;
             shadowDisc.position.set(0, 0.02, 0);
@@ -299,22 +366,19 @@
         }
 
         update(dt) {
-            // 1. 根据 ActorRoot 实际水平位置位移计算速率
             const currentPos = this.actorRoot.position;
             const dx = currentPos.x - this.prevWorldPos.x;
             const dz = currentPos.z - this.prevWorldPos.z;
             const speed = Math.sqrt(dx * dx + dz * dz) / Math.max(0.0001, dt);
             this.prevWorldPos.copy(currentPos);
 
-            // 2. 状态机切换逻辑
+            // 状态机切换逻辑
             if (this.actorData.actionType !== 'none') {
-                // 状态 3: ACTION_FALLBACK (由 Gameplay Actor 执行起跳/踢球位移，视觉外皮保持中立，避免播放错误跑步)
                 if (this.currentState !== 'ACTION_FALLBACK') {
                     if (this.runAction) this.runAction.fadeOut(0.12);
                     this.currentState = 'ACTION_FALLBACK';
                 }
             } else if (speed > 0.15) {
-                // 状态 2: RUN
                 if (this.currentState !== 'RUN') {
                     if (this.runAction) {
                         this.runAction.reset().fadeIn(0.18).play();
@@ -322,18 +386,15 @@
                     this.currentState = 'RUN';
                 }
                 if (this.runAction) {
-                    // 步频与 Gameplay 移动速度轻微关联
                     this.runAction.timeScale = Math.max(0.7, Math.min(1.8, speed * 0.45));
                 }
             } else {
-                // 状态 1: IDLE
                 if (this.currentState !== 'IDLE') {
                     if (this.runAction) this.runAction.fadeOut(0.25);
                     this.currentState = 'IDLE';
                 }
             }
 
-            // 3. 驱动骨骼动画更新
             if (this.mixer) {
                 this.mixer.update(dt);
             }
@@ -369,7 +430,7 @@
             try {
                 await this.asset.load(modelUrl);
                 this.initialized = true;
-                console.log('[ExternalPlayers] External Humanoid Pipeline Ready! Ready to instantiate characters.');
+                console.log('[ExternalPlayers] Mixamo-Compatible Replacement Path Established! External Humanoid Pipeline Ready.');
                 this.setupDebugBridge();
                 if (onDone) onDone(true);
             } catch (err) {
@@ -385,7 +446,20 @@
 
         clearInstances() {
             for (let inst of this.instances) {
-                if (inst.mixer) inst.mixer.stopAllAction();
+                if (inst.mixer) {
+                    inst.mixer.stopAllAction();
+                    inst.mixer.uncacheRoot(inst.clonedModel);
+                }
+                if (inst.actorRoot && inst.actorRoot.parent) {
+                    inst.actorRoot.parent.remove(inst.actorRoot);
+                }
+                if (inst.clonedModel) {
+                    inst.clonedModel.traverse((child) => {
+                        if (child.isSkinnedMesh && child.skeleton) {
+                            child.skeleton.dispose();
+                        }
+                    });
+                }
             }
             this.instances.length = 0;
         }
@@ -406,7 +480,6 @@
             }
         }
 
-        // 调试诊断桥接：暴露 window.__externalPlayerDebug
         setupDebugBridge() {
             window.__externalPlayerDebug = () => {
                 const geoSet = new Set();
@@ -419,12 +492,10 @@
                     inst.actorRoot.traverse((child) => {
                         if (child.isSkinnedMesh) {
                             if (child.geometry) geoSet.add(child.geometry.uuid);
-                            if (child.material) {
-                                matSet.add(child.material.uuid);
-                                ['map', 'normalMap', 'roughnessMap'].forEach((p) => {
-                                    if (child.material[p]) texSet.add(child.material[p].uuid);
-                                });
-                            }
+                            forEachMaterial(child.material, (mat) => {
+                                matSet.add(mat.uuid);
+                                collectMaterialTextures(mat, texSet);
+                            });
                             if (child.skeleton) {
                                 skelSet.add(child.skeleton.uuid);
                                 child.skeleton.bones.forEach((b) => boneSet.add(b.uuid));
@@ -433,21 +504,32 @@
                     });
                 }
 
-                // 独立性验证测试
+                // 独立性验证测试 (使用完整原始四元数备份与恢复，零副作用)
                 let isIndependent = false;
                 if (this.instances.length >= 2) {
                     let b0 = null, b1 = null;
                     this.instances[0].clonedModel.traverse((c) => { if (c.isBone && c.name.includes('LeftArm')) b0 = c; });
                     this.instances[1].clonedModel.traverse((c) => { if (c.isBone && c.name.includes('LeftArm')) b1 = c; });
                     if (b0 && b1 && b0 !== b1) {
-                        const initRot1 = b1.rotation.z;
-                        b0.rotation.z += 0.85;
-                        isIndependent = (b1.rotation.z === initRot1);
-                        b0.rotation.z -= 0.85;
+                        const savedQuat0 = b0.quaternion.clone();
+                        const savedQuat1 = b1.quaternion.clone();
+                        
+                        b0.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), 1.25);
+                        b0.updateMatrixWorld(true);
+                        
+                        isIndependent = (b1.quaternion.x === savedQuat1.x &&
+                                         b1.quaternion.y === savedQuat1.y &&
+                                         b1.quaternion.z === savedQuat1.z &&
+                                         b1.quaternion.w === savedQuat1.w);
+                                         
+                        b0.quaternion.copy(savedQuat0);
+                        b0.updateMatrixWorld(true);
                     }
                 }
 
                 return {
+                    pipelineStatus: 'Mixamo-Compatible Replacement Path Established',
+                    replacementReady: true,
                     instanceCount: this.instances.length,
                     sourceTriangles: this.asset.stats.triangles,
                     sourceMeshes: this.asset.stats.skinnedMeshes,

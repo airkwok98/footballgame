@@ -2616,6 +2616,7 @@
         }
 
         function triggerConfettiShower() {
+            if (new URLSearchParams(window.location.search).get('benchmarkPlayers') !== null) return;
             stadiumConfettiPool.forEach(c => {
                 c.active = true;
                 c.mesh.visible = true;
@@ -3087,10 +3088,15 @@
 
             // 2. 根据当前关卡配置实例化对应数量的球员 (从第1轮 4人 逐渐晋级至第8轮 11人满编)
             const stage = TOURNAMENT_STAGES[stageIdx];
-            const count = stage.playerCount;
+            const benchParam = new URLSearchParams(window.location.search).get('benchmarkPlayers');
+            const isBenchmarkMode = (benchParam !== null && !isNaN(parseInt(benchParam, 10)));
+            const count = isBenchmarkMode ? Math.max(1, Math.min(11, parseInt(benchParam, 10))) : stage.playerCount;
 
             for (let i = 0; i < count; i++) {
-                const cfg = ALL_PLAYERS_CONFIG[i];
+                let cfg = ALL_PLAYERS_CONFIG[i];
+                if (isBenchmarkMode && count === 1) {
+                    cfg = Object.assign({}, ALL_PLAYERS_CONFIG[1], { baseX: 0, baseZ: -2.0, amplitude: 3.5 });
+                }
                 const isKeeper = (cfg.role === 'top_keeper');
                 const jerseyColor = isKeeper ? 0xf97316 : 0x2563eb;
                 const shortsColor = isKeeper ? 0x1e293b : 0xffffff;
@@ -3103,8 +3109,8 @@
                 scene.add(player.group);
                 characters.push(player);
 
-                // 若为本轮新晋入场的防守球员，触发聚光灯登场微粒子
-                if (i === count - 1 && stageIdx > 0 && notify) {
+                // 若为本轮新晋入场的防守球员，触发聚光灯登场微粒子 (Benchmark 模式静默)
+                if (i === count - 1 && stageIdx > 0 && notify && !isBenchmarkMode) {
                     spawnSparks(cfg.baseX, 1.2, cfg.baseZ, 0x38bdf8);
                     spawnTurfBits(cfg.baseX, 0.2, cfg.baseZ, 0x86efac);
                 }
@@ -3406,6 +3412,19 @@
            10. 动力学物理步进（暴击 + 子弹时间 + 失败胜负闭环）
            ========================================================================== */
         function physicsTick(dt) {
+            const benchParam = new URLSearchParams(window.location.search).get('benchmarkPlayers');
+            if (benchParam !== null && !isNaN(parseInt(benchParam, 10))) {
+                if (ball) {
+                    ball.x = 0;
+                    ball.y = G.ballR;
+                    ball.z = 1.0;
+                    ball.vx = 0;
+                    ball.vy = 0;
+                    ball.vz = 0;
+                    if (ball.mesh) ball.mesh.position.set(0, G.ballR, 1.0);
+                }
+                return;
+            }
             let simDt = dt;
             // 进球后的庆祝慢动作，射门冲刺过程绝不提前减速！
             if (goalCelebrationTimer > 0) {
@@ -3770,6 +3789,7 @@
         }
 
         function spawnTurfBits(x, y, z, color = 0x86efac) {
+            if (new URLSearchParams(window.location.search).get('benchmarkPlayers') !== null) return;
             for (let i = 0; i < 9; i++) {
                 const sp = new THREE.Mesh(
                     new THREE.BoxGeometry(0.08, 0.08, 0.08),
@@ -3811,6 +3831,27 @@
         }
 
         function updateCPUDefender(c, dt) {
+            const benchParam = new URLSearchParams(window.location.search).get('benchmarkPlayers');
+            const isBenchmarkMode = (benchParam !== null && !isNaN(parseInt(benchParam, 10)));
+            if (isBenchmarkMode) {
+                c.actionType = 'none';
+                c.actionTimer = 0;
+                c.time += dt * (c.speed || 0.65);
+                const pos = c.group.position;
+                pos.x = c.baseX + (c.amplitude || 2.5) * Math.sin(c.time);
+                pos.z = c.baseZ;
+                pos.y = 0;
+                if (c.lLeg && c.rLeg) {
+                    const runPhase = c.time * 6.0;
+                    c.lLeg.rotation.x = Math.sin(runPhase) * 0.45;
+                    c.rLeg.rotation.x = -Math.sin(runPhase) * 0.45;
+                    if (c.lArm && c.rArm) {
+                        c.lArm.rotation.x = -Math.sin(runPhase) * 0.35;
+                        c.rArm.rotation.x = Math.sin(runPhase) * 0.35;
+                    }
+                }
+                return;
+            }
             c.time += dt * c.speed;
             if (c.kickCooldown > 0) c.kickCooldown -= dt;
             const pos = c.group.position;
@@ -4077,6 +4118,7 @@
         }
 
         function spawnSparks(x, y, z, color) {
+            if (new URLSearchParams(window.location.search).get('benchmarkPlayers') !== null) return;
             for (let i = 0; i < 14; i++) {
                 const sp = new THREE.Mesh(
                     new THREE.SphereGeometry(0.12, 6, 6),
@@ -4422,31 +4464,39 @@
             }
 
             // 相机平滑阻尼过渡与动态微视差 (Smooth Camera Lerp & Parallax Tracking)
-            currentCamPos.lerp(targetCamPos, dt * 5.5);
-            currentCamLook.lerp(targetCamLook, dt * 5.5);
+            const benchParam = new URLSearchParams(window.location.search).get('benchmarkPlayers');
+            const isBenchmarkMode = (benchParam !== null && !isNaN(parseInt(benchParam, 10)));
 
-            let camX = currentCamPos.x + (ball ? ball.x * 0.035 : 0);
-            let camY = currentCamPos.y;
-            let camZ = currentCamPos.z + (ball ? (ball.z - 1.0) * 0.025 : 0);
+            if (isBenchmarkMode) {
+                camera.position.set(0, 33.0, 23.5);
+                camera.lookAt(0, 0.2, 2.0);
+            } else {
+                currentCamPos.lerp(targetCamPos, dt * 5.5);
+                currentCamLook.lerp(targetCamLook, dt * 5.5);
 
-            if (screenShake > 0.01) {
-                camX += (Math.random() - 0.5) * screenShake * 0.8;
-                camZ += (Math.random() - 0.5) * screenShake * 0.8;
-                screenShake *= 0.88;
-            }
+                let camX = currentCamPos.x + (ball ? ball.x * 0.035 : 0);
+                let camY = currentCamPos.y;
+                let camZ = currentCamPos.z + (ball ? (ball.z - 1.0) * 0.025 : 0);
 
-            if (bulletTimeTimer > 0) {
-                camY += (42.0 - camY) * dt * 4.0;
-                camZ += (5.0 - camZ) * dt * 4.0;
-            }
+                if (screenShake > 0.01) {
+                    camX += (Math.random() - 0.5) * screenShake * 0.8;
+                    camZ += (Math.random() - 0.5) * screenShake * 0.8;
+                    screenShake *= 0.88;
+                }
 
-            camera.position.set(camX, camY, camZ);
-            camera.lookAt(currentCamLook.x + (ball ? ball.x * 0.02 : 0), currentCamLook.y, currentCamLook.z);
+                if (bulletTimeTimer > 0) {
+                    camY += (42.0 - camY) * dt * 4.0;
+                    camZ += (5.0 - camZ) * dt * 4.0;
+                }
 
-            // Visual 2.0: 相机导演介入 (Sweet Spot / Rocket Shot / Goal Punch)
-            if (window.Visual2 && window.Visual2.cameraDirector) {
-                window.Visual2.cameraDirector.setBase(camera.position, currentCamLook, currentCameraMode === 'top' ? 52 : 48);
-                window.Visual2.cameraDirector.update(dt);
+                camera.position.set(camX, camY, camZ);
+                camera.lookAt(currentCamLook.x + (ball ? ball.x * 0.02 : 0), currentCamLook.y, currentCamLook.z);
+
+                // Visual 2.0: 相机导演介入 (Sweet Spot / Rocket Shot / Goal Punch)
+                if (window.Visual2 && window.Visual2.cameraDirector) {
+                    window.Visual2.cameraDirector.setBase(camera.position, currentCamLook, currentCameraMode === 'top' ? 52 : 48);
+                    window.Visual2.cameraDirector.update(dt);
+                }
             }
 
             renderer.render(scene, camera);
