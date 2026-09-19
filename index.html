@@ -552,6 +552,7 @@
     <script src="src/actors/playerVisual.js"></script>
     <script src="src/actors/externalPlayer.js"></script>
     <script src="src/effects/goalImpactStack.js"></script>
+    <script src="src/effects/fxPool.js"></script>
     <script src="src/actors/stadiumCrowd.js"></script>
     <!-- External GLTF 资产模块 -->
     <script src="src/assets/gltfAssetLoader.js"></script>
@@ -791,6 +792,11 @@
         window.TOURNAMENT_STAGES = TOURNAMENT_STAGES;
         let countdown = 60;
         let countdownMesh;
+        let countdownCanvas = null;
+        let countdownCtx = null;
+        let countdownTexture = null;
+        let countdownIntervalId = null;
+        window.__countdownTextureInstanceCount = 0;
         let pitchMesh = null;
         let pitchLineMat = null;
         const PITCH_STYLES = [
@@ -1232,6 +1238,9 @@
             }
             initThree();
             loadAllAssets(() => {
+                if (window.FXPool) {
+                    window.FXPool.init(scene); // 初始化零GC物理火花/草屑/轨迹对象池 (P0-B)
+                }
                 initSmokeSystem();     // 初始化零GC空气烟雾粒子池
                 buildCleanPitch();     // 还原第一版纯净高级的纯正绿茵球台！
                 buildSmoothRails();    // 洁白圆润导轨
@@ -1294,11 +1303,7 @@
                     }, 250);
                 }
 
-                setInterval(() => {
-                    if (countdown > 0) countdown--;
-                    else countdown = 60;
-                    updateCountdownTexture();
-                }, 1000);
+                startCountdownTimer();
 
                 animate();
             });
@@ -1690,29 +1695,63 @@
             }, 1500);
         }
 
+        function initCountdownCanvas() {
+            if (countdownCanvas) return;
+            countdownCanvas = document.createElement('canvas');
+            countdownCanvas.width = 128;
+            countdownCanvas.height = 128;
+            countdownCtx = countdownCanvas.getContext('2d');
+            countdownTexture = new THREE.CanvasTexture(countdownCanvas);
+            window.__countdownTextureInstanceCount = 1;
+        }
+
         function createCountdownBadge() {
-            countdownMesh = new THREE.Mesh(
-                new THREE.PlaneGeometry(2.3, 2.3),
-                new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.85 })
-            );
-            countdownMesh.rotation.x = -Math.PI / 2;
-            countdownMesh.position.set(0, 0.025, 0);
-            scene.add(countdownMesh);
+            initCountdownCanvas();
+            if (!countdownMesh) {
+                countdownMesh = new THREE.Mesh(
+                    new THREE.PlaneGeometry(2.3, 2.3),
+                    new THREE.MeshBasicMaterial({ map: countdownTexture, transparent: true, opacity: 0.85 })
+                );
+                countdownMesh.rotation.x = -Math.PI / 2;
+                countdownMesh.position.set(0, 0.025, 0);
+                scene.add(countdownMesh);
+            } else {
+                countdownMesh.material.map = countdownTexture;
+                countdownMesh.material.needsUpdate = true;
+            }
             updateCountdownTexture();
         }
 
         function updateCountdownTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 128; canvas.height = 128;
-            const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
-            ctx.font = 'bold 84px Arial, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(String(countdown), 64, 64);
-            countdownMesh.material.map = new THREE.CanvasTexture(canvas);
-            countdownMesh.material.needsUpdate = true;
+            if (!countdownCanvas || !countdownCtx || !countdownTexture) {
+                initCountdownCanvas();
+            }
+            countdownCtx.clearRect(0, 0, 128, 128);
+            countdownCtx.fillStyle = '#ffffff';
+            countdownCtx.font = 'bold 84px Arial, sans-serif';
+            countdownCtx.textAlign = 'center';
+            countdownCtx.textBaseline = 'middle';
+            countdownCtx.fillText(String(countdown), 64, 64);
+            countdownTexture.needsUpdate = true;
         }
+
+        function startCountdownTimer() {
+            stopCountdownTimer();
+            countdownIntervalId = setInterval(() => {
+                if (countdown > 0) countdown--;
+                else countdown = 60;
+                updateCountdownTexture();
+            }, 1000);
+        }
+
+        function stopCountdownTimer() {
+            if (countdownIntervalId !== null) {
+                clearInterval(countdownIntervalId);
+                countdownIntervalId = null;
+            }
+        }
+        window.startCountdownTimer = startCountdownTimer;
+        window.stopCountdownTimer = stopCountdownTimer;
 
         function buildBox(cx, cz, w, h, mat) {
             const g = new THREE.Group();
@@ -3212,7 +3251,23 @@
             // 1. 安全卸载当前场上所有球员 3D 节点 (0 内存泄漏)
             for (let i = 0; i < characters.length; i++) {
                 const c = characters[i];
-                if (c.group && c.group.parent) c.group.parent.remove(c.group);
+                if (c.group) {
+                    if (c.group.parent) c.group.parent.remove(c.group);
+                    if (!window.ExternalPlayers || !window.ExternalPlayers.active) {
+                        c.group.traverse(child => {
+                            if (child.isMesh) {
+                                if (child.geometry) child.geometry.dispose();
+                                if (child.material) {
+                                    if (Array.isArray(child.material)) {
+                                        child.material.forEach(m => m.dispose());
+                                    } else {
+                                        child.material.dispose();
+                                    }
+                                }
+                            }
+                        });
+                    }
+                }
             }
             characters.length = 0;
             window.characters = characters;
@@ -3939,6 +3994,10 @@
 
         function spawnTurfBits(x, y, z, color = 0x86efac) {
             if (new URLSearchParams(window.location.search).get('benchmarkPlayers') !== null) return;
+            if (window.FXPool && window.FXPool.initialized) {
+                window.FXPool.spawnTurfBits(x, y, z, color, 9);
+                return;
+            }
             for (let i = 0; i < 9; i++) {
                 const sp = new THREE.Mesh(
                     new THREE.BoxGeometry(0.08, 0.08, 0.08),
@@ -4276,6 +4335,11 @@
         }
 
         function spawnTrailParticle(x, z) {
+            if (window.FXPool && window.FXPool.initialized) {
+                const color = (currentSkin === 'magma' ? 0xef4444 : 0x38bdf8);
+                window.FXPool.spawnTrail(x, z, color);
+                return;
+            }
             const p = new THREE.Mesh(
                 new THREE.SphereGeometry(0.18, 6, 6),
                 new THREE.MeshBasicMaterial({ color: (currentSkin === 'magma' ? 0xef4444 : 0x38bdf8), transparent: true, opacity: 0.8 })
@@ -4287,6 +4351,10 @@
 
         function spawnSparks(x, y, z, color) {
             if (new URLSearchParams(window.location.search).get('benchmarkPlayers') !== null) return;
+            if (window.FXPool && window.FXPool.initialized) {
+                window.FXPool.spawnSparks(x, y, z, color, 14);
+                return;
+            }
             for (let i = 0; i < 14; i++) {
                 const sp = new THREE.Mesh(
                     new THREE.SphereGeometry(0.12, 6, 6),
@@ -4305,6 +4373,9 @@
         }
 
         function updateParticles(dt) {
+            if (window.FXPool && window.FXPool.initialized) {
+                window.FXPool.update(dt);
+            }
             for (let i = ballTrailParticles.length - 1; i >= 0; i--) {
                 const tp = ballTrailParticles[i];
                 tp.life -= dt * 3.5;
@@ -4312,6 +4383,8 @@
                 tp.mesh.material.opacity = tp.life * 2.0;
                 if (tp.life <= 0) {
                     scene.remove(tp.mesh);
+                    if (tp.mesh.geometry) tp.mesh.geometry.dispose();
+                    if (tp.mesh.material) tp.mesh.material.dispose();
                     ballTrailParticles.splice(i, 1);
                 }
             }
@@ -4325,6 +4398,8 @@
                 p.mesh.scale.setScalar(Math.max(0.01, p.life));
                 if (p.life <= 0) {
                     scene.remove(p.mesh);
+                    if (p.mesh.geometry) p.mesh.geometry.dispose();
+                    if (p.mesh.material) p.mesh.material.dispose();
                     particles.splice(i, 1);
                 }
             }
@@ -4686,6 +4761,22 @@
                 window.Visual2.quality.recordRendererInfo(renderer, 7);
             }
         }
+
+        /* ==========================================================================
+           P0-B 显存生命周期与对象池运行时检测探针 (GPU Lifecycle QA Instrumentation)
+           ========================================================================== */
+        window.__gpuLifecycleDebug = function() {
+            const mem = (renderer && renderer.info && renderer.info.memory) ? renderer.info.memory : { textures: 0, geometries: 0 };
+            const render = (renderer && renderer.info && renderer.info.render) ? renderer.info.render : { calls: 0, frame: 0 };
+            return {
+                textures: mem.textures,
+                geometries: mem.geometries,
+                calls: render.calls,
+                poolStats: window.FXPool ? window.FXPool.getStats() : null,
+                countdownTextureInstances: window.__countdownTextureInstanceCount || (countdownTexture ? 1 : 0),
+                countdownIntervalActive: countdownIntervalId !== null
+            };
+        };
     </script>
 </body>
 </html>
