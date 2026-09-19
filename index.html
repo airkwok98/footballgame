@@ -229,6 +229,82 @@
             transform: translate(-50%, -50%) scale(1.05);
         }
 
+        /* 核心比赛循环极简启动与倒计时 UI (VS03-B) */
+        #ready-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            z-index: 35;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        #ready-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translate(-50%, -50%) scale(1.0);
+        }
+        #btn-ready-start {
+            background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+            border: 1.5px solid rgba(255, 255, 255, 0.45);
+            color: #ffffff;
+            font-size: 16px;
+            font-weight: 800;
+            padding: 12px 32px;
+            border-radius: 999px;
+            box-shadow: 0 4px 25px rgba(37, 99, 235, 0.6), 0 0 16px rgba(56, 189, 248, 0.4);
+            cursor: pointer;
+            letter-spacing: 1px;
+            transition: transform 0.15s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.15s ease;
+            min-height: 44px;
+            min-width: 190px;
+        }
+        #btn-ready-start:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 30px rgba(37, 99, 235, 0.85);
+        }
+        #btn-ready-start:active {
+            transform: scale(0.96);
+        }
+        #ready-hint {
+            font-size: 11px;
+            color: #94a3b8;
+            letter-spacing: 0.5px;
+            text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
+            pointer-events: none;
+        }
+
+        /* 3-2-1-GO 倒计时大横幅 */
+        #countdown-banner {
+            position: absolute;
+            top: 42%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.6);
+            font-size: 72px;
+            font-weight: 900;
+            font-style: italic;
+            color: #38bdf8;
+            text-shadow: 0 0 35px rgba(56, 189, 248, 0.95), 0 4px 16px rgba(0, 0, 0, 0.9);
+            letter-spacing: 2px;
+            opacity: 0;
+            pointer-events: none;
+            transition: transform 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.22s ease;
+            z-index: 35;
+        }
+        #countdown-banner.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1.15);
+        }
+        #countdown-banner.go {
+            color: #22c55e;
+            text-shadow: 0 0 45px rgba(34, 197, 94, 0.95), 0 4px 16px rgba(0, 0, 0, 0.9);
+        }
+
         /* 草坪切换优雅毛玻璃浮动 Toast */
         #pitch-toast {
             position: absolute;
@@ -432,6 +508,13 @@
         <div id="drain-banner">DRAINED! 💔 漏球丢分</div>
         <div id="pitch-toast">🌿 经典斑马横条纹</div>
 
+        <!-- 比赛循环准备与倒计时 UI (VS03-B) -->
+        <div id="ready-overlay">
+            <button id="btn-ready-start">⚽ READY TO PLAY</button>
+            <div id="ready-hint">Press SPACE or Tap to Kick Off</div>
+        </div>
+        <div id="countdown-banner">3</div>
+
         <!-- 工具栏 -->
         <div id="mini-tools">
             <button class="tool-btn" id="btn-camera" title="切换视角 (当前: 3D沉浸) [V]">🎥</button>
@@ -561,6 +644,8 @@
     <script src="src/assets/externalStadium.js"></script>
     <script src="src/assets/footballCourtStadium.js"></script>
     <script src="src/assets/environmentV2.js"></script>
+    <!-- 核心比赛循环状态机模块 (VS03-B) -->
+    <script src="src/game/matchState.js"></script>
 
     <script>
         /* ==========================================================================
@@ -792,6 +877,21 @@
         };
         window.tournamentState = tournamentState;
         window.TOURNAMENT_STAGES = TOURNAMENT_STAGES;
+        Object.defineProperty(window, 'matchState', {
+            get() { return (window.matchLoop ? window.matchLoop.getState() : 'BOOT'); },
+            configurable: true
+        });
+        window.MATCH_STATE = window.MATCH_STATE || {
+            BOOT: 'BOOT',
+            READY: 'READY',
+            COUNTDOWN: 'COUNTDOWN',
+            PLAYING: 'PLAYING',
+            GOAL_PAUSE: 'GOAL_PAUSE',
+            ROUND_COMPLETE: 'ROUND_COMPLETE',
+            PROMOTION: 'PROMOTION',
+            DEFEAT: 'DEFEAT',
+            CHAMPION: 'CHAMPION'
+        };
         let countdown = 60;
         let countdownMesh;
         let countdownCanvas = null;
@@ -1262,9 +1362,13 @@
                 buildPlayers();        // 阵营绝不乌龙
                 setupControls();
                 initReviewHUD();
+                initMatchLoop();
 
+                const benchParam = new URLSearchParams(window.location.search).get('benchmarkPlayers');
+                const isBenchmarkMode = (benchParam !== null && !isNaN(parseInt(benchParam, 10)));
                 const testParam = new URLSearchParams(window.location.search).get('test');
                 if (testParam === 'net_hit') {
+                    matchLoop.setState(MATCH_STATE.PLAYING);
                     setTimeout(() => {
                         ball.x = 0.35;
                         ball.y = 1.25;
@@ -1272,16 +1376,10 @@
                         ball.vx = 0.4;
                         ball.vy = 0.2;
                         ball.vz = -16.0;
-                        goalState.active = true;
-                        goalState.timer = 1.65;
-                        goalCelebrationTimer = 1.65;
-                        Sound.play('goal', 1.0);
-                        const b = document.getElementById('goal-banner');
-                        b.classList.add('show');
-                        spawnSparks(0, 1.5, G.topZ, 0xfacc15);
-                        triggerConfettiShower();
+                        matchLoop.handlePlayerGoal();
                     }, 200);
                 } else if (testParam === 'header') {
+                    matchLoop.setState(MATCH_STATE.PLAYING);
                     setTimeout(() => {
                         const target = characters.find(c => c.role === 'midfielder') || characters[1];
                         target.actionType = 'header';
@@ -1296,6 +1394,7 @@
                         spawnHeaderAirburst(ball.x, 1.9, ball.z);
                     }, 250);
                 } else if (testParam === 'kick') {
+                    matchLoop.setState(MATCH_STATE.PLAYING);
                     setTimeout(() => {
                         const target = characters.find(c => c.role === 'defender') || characters[1];
                         target.actionType = 'kick_right';
@@ -1310,6 +1409,11 @@
                         spawnTurfBits(ball.x, 0.2, ball.z, 0x86efac);
                         spawnSparks(ball.x, 0.4, ball.z, 0xffffff);
                     }, 250);
+                } else if (isBenchmarkMode) {
+                    matchLoop.setState(MATCH_STATE.PLAYING);
+                } else {
+                    // 正式对战流程：进入 READY 状态，等待玩家轻量开启
+                    matchLoop.setReady();
                 }
 
                 startCountdownTimer();
@@ -2158,10 +2262,13 @@
                 window.ExternalBall.init(ball.mesh, G);
             }
 
-            resetBall();
+            prepareKickoff(0);
         }
 
-        function resetBall(mode = null) {
+        /* ==========================================================================
+           7.1 统一开球准备与倒计时释放状态流 (Unified Kickoff & Countdown Flow)
+           ========================================================================== */
+        function prepareKickoff(mode = null) {
             comboCount = 0;
             ballSlipstreamTimer = 0;
             ballSlipstreamCrit = false;
@@ -2171,56 +2278,105 @@
             goalState.active = false;
             goalState.netSoundPlayed = false;
             topGoalNet.reset();
-            document.getElementById('combo-badge').classList.remove('show');
+            const comboEl = document.getElementById('combo-badge');
+            if (comboEl) comboEl.classList.remove('show');
 
-            // 激活 3.5 秒开球防漏能量盾 (Ball Saver)，绝不错杀
-            ballSaverTimer = 3.5;
+            // 开球能量保护盾先归零，待倒计时结束 releaseKickoffBall 时赋予 3.5s
+            ballSaverTimer = 0;
 
-            // 彻底杜绝中路垂直下落！采用拟真足球 3 种安全边路/高空发球策略：
+            // 彻底杜绝中路垂直下落！拟真足球 3 种安全边路/高空发球策略：
             // 模式 0 (40%): 边线掷界外球入场 (Touchline Throw-in)
             // 模式 1 (35%): 前场角旗高空弧线挑传入场 (High-Arc Wing Cross)
             // 模式 2 (25%): 侧翼外轨平缓顺滑喂球 (Inlane Ramp Delivery)
             const style = (mode !== null) ? mode : (Math.random() < 0.40 ? 0 : (Math.random() < 0.75 ? 1 : 2));
             const isLeft = Math.random() < 0.5;
 
+            let kx = 0, ky = G.ballR, kz = 0;
+            let kvx = 0, kvy = 0, kvz = 0;
+            let toast = '';
+
             if (style === 0) {
-                // 边线界外球：从左/右侧边线横向大力掷入场内，横穿中场滑向对侧挡杆，绝不掉中缝
-                ball.x = isLeft ? -6.8 : 6.8;
-                ball.y = G.ballR + 0.12;
-                ball.z = 4.8 + Math.random() * 2.0;
-                ball.vx = isLeft ? (10.5 + Math.random() * 2.0) : -(10.5 + Math.random() * 2.0);
-                ball.vy = 1.4;
-                ball.vz = 2.0 + Math.random() * 2.0;
-                showPitchToast(isLeft ? '⚽ 左边路掷界外球入场' : '⚽ 右边路掷界外球入场');
+                // 边线界外球：从左/右侧边线横向大力掷入场内
+                kx = isLeft ? -6.8 : 6.8;
+                ky = G.ballR + 0.12;
+                kz = 4.8 + Math.random() * 2.0;
+                kvx = isLeft ? (10.5 + Math.random() * 2.0) : -(10.5 + Math.random() * 2.0);
+                kvy = 1.4;
+                kvz = 2.0 + Math.random() * 2.0;
+                toast = isLeft ? '⚽ 左边路掷界外球入场' : '⚽ 右边路掷界外球入场';
             } else if (style === 1) {
-                // 前场角旗高空挑传入场：高空飞行 1.5 秒划出优美抛物线落入中前场，准备时间极度充裕
-                ball.x = isLeft ? -6.5 : 6.5;
-                ball.y = 1.0;
-                ball.z = -9.5;
-                ball.vx = isLeft ? (4.2 + Math.random() * 1.2) : -(4.2 + Math.random() * 1.2);
-                ball.vy = 8.2 + Math.random() * 1.4;
-                ball.vz = 7.5 + Math.random() * 1.5;
-                showPitchToast(isLeft ? '⚽ 左路角球弧线挑传入场' : '⚽ 右路角球弧线挑传入场');
+                // 前场角旗高空挑传入场
+                kx = isLeft ? -6.5 : 6.5;
+                ky = 1.0;
+                kz = -9.5;
+                kvx = isLeft ? (4.2 + Math.random() * 1.2) : -(4.2 + Math.random() * 1.2);
+                kvy = 8.2 + Math.random() * 1.4;
+                kvz = 7.5 + Math.random() * 1.5;
+                toast = isLeft ? '⚽ 左路角球弧线挑传入场' : '⚽ 右路角球弧线挑传入场';
             } else {
-                // 侧翼导轨顺滑喂球：球沿着斜护栏平稳滑落，稳稳送入玩家挡杆击球盘，从容抽射
-                ball.x = isLeft ? -6.2 : 6.2;
-                ball.y = G.ballR;
-                ball.z = 8.8;
-                ball.vx = isLeft ? 3.2 : -3.2;
-                ball.vy = 0;
-                ball.vz = 6.0 + Math.random() * 1.2;
-                showPitchToast(isLeft ? '⚽ 左侧导轨安全喂球' : '⚽ 右侧导轨安全喂球');
+                // 侧翼导轨顺滑喂球
+                kx = isLeft ? -6.2 : 6.2;
+                ky = G.ballR;
+                kz = 8.8;
+                kvx = isLeft ? 3.2 : -3.2;
+                kvy = 0;
+                kvz = 6.0 + Math.random() * 1.2;
+                toast = isLeft ? '⚽ 左侧导轨安全喂球' : '⚽ 右侧导轨安全喂球';
             }
+
+            // Kickoff 规则：Ball fixed 锁定在起始点，速度归零
+            ball.x = kx;
+            ball.y = ky;
+            ball.z = kz;
+            ball.vx = 0;
+            ball.vy = 0;
+            ball.vz = 0;
+            ball.speed = 0;
 
             if (ball.mesh) {
                 ball.mesh.position.set(ball.x, ball.y, ball.z);
             }
 
-            // 发球开球哨声与视觉微引导
+            // AI 球员动作重置，保持待命
+            for (let i = 0; i < characters.length; i++) {
+                characters[i].actionType = 'none';
+                characters[i].actionTimer = 0;
+            }
+
+            matchLoop.prepareKickoff({
+                vx: kvx,
+                vy: kvy,
+                vz: kvz,
+                toast: toast
+            });
+        }
+
+        function startKickoffCountdown() {
+            matchLoop.startKickoffCountdown();
+        }
+
+        function releaseKickoffBall(data) {
+            if (data) {
+                ball.vx = data.vx;
+                ball.vy = data.vy;
+                ball.vz = data.vz;
+                ball.speed = Math.hypot(ball.vx, ball.vz);
+                if (data.toast) showPitchToast(data.toast);
+            }
+            ballSaverTimer = 3.5;
             Sound.play('whistle', 0.8, 1.15);
             spawnSparks(ball.x, ball.y, ball.z, 0x38bdf8);
             spawnTurfBits(ball.x, ball.y, ball.z, 0x86efac);
         }
+
+        function resetBall(mode = null) {
+            if (matchLoop.is(MATCH_STATE.PLAYING) || matchLoop.is(MATCH_STATE.READY)) {
+                prepareKickoff(mode);
+                startKickoffCountdown();
+            }
+        }
+        window.prepareKickoff = prepareKickoff;
+        window.startKickoffCountdown = startKickoffCountdown;
         window.resetBall = resetBall;
 
         /* ==========================================================================
@@ -3373,16 +3529,18 @@
             tournamentState.targetScore = target;
             updateTournamentHUD();
             showPitchToast(`🎯 晋级目标已设置为：先得 ${target} 分`);
-            // 如果更改后已经满足晋级/失利条件，即刻判定
-            if (scoreP1 >= target) {
-                handleStageWin();
-            } else if (scoreCPU >= target) {
-                handleStageLose();
+            // 如果在游戏中更改后已经满足判定条件，触发目标判决
+            if (matchLoop.is(MATCH_STATE.PLAYING)) {
+                if (scoreP1 >= target) {
+                    matchLoop.handlePlayerGoal();
+                } else if (scoreCPU >= target) {
+                    matchLoop.handleCpuGoal();
+                }
             }
         }
 
-        function handleStageWin() {
-            if (tournamentState.currentStage >= TOURNAMENT_STAGES.length - 1) {
+        function handleStageWin(isChampion = false) {
+            if (isChampion || tournamentState.currentStage >= TOURNAMENT_STAGES.length - 1) {
                 // 击败第 8 轮 11 人终极国家队，夺得大力神杯世界冠军！
                 triggerConfettiShower();
                 Sound.play('goal', 1.0);
@@ -3678,8 +3836,8 @@
                 updateSingleFlipper(rightFlipper, true, subDt);
 
                 // 2. 足球微步动力学
-                if (goalState.active) {
-                    // 进球立体球门腔体内：3D 飞行与重力自然滑落
+                if (matchLoop.is(MATCH_STATE.GOAL_PAUSE) && goalState.active) {
+                    // 进球立体球门腔体内：3D 飞行与重力自然滑落与撞网
                     ball.vy += -18.0 * subDt;
                     ball.y += ball.vy * subDt;
                     if (ball.y < G.ballR) {
@@ -3706,7 +3864,7 @@
                         screenShake = Math.max(screenShake, 0.45);
                         spawnSparks(ball.x, ball.y, ball.z, 0xffffff);
                     }
-                } else {
+                } else if (matchLoop.is(MATCH_STATE.PLAYING)) {
                     // 球场台面动力学：向上射门时保持充沛强劲冲量（仅微弱阻力），向下回落时全重力滑落
                     const effectiveGravity = (ball.vz < 0) ? 1.4 : G.tableTiltGravityZ;
                     ball.vz += effectiveGravity * subDt;
@@ -3744,19 +3902,21 @@
                     for (let i = 0; i < walls.length; i++) {
                         checkWallBounce(walls[i]);
                     }
+                } else {
+                    // 非 PLAYING 且非进球慢放期间（READY, COUNTDOWN, ROUND_COMPLETE, PROMOTION, DEFEAT, CHAMPION）
+                    // 足球绝对锁定在发球位，速度恒为 0，杜绝意外位移与碰撞
+                    ball.vx = 0;
+                    ball.vy = 0;
+                    ball.vz = 0;
+                    ball.speed = 0;
                 }
             }
 
             // 平衡态网面微步衰减与进球阶段计时
             if (!goalState.active) {
                 topGoalNet.update(simDt, ball);
-            } else {
+            } else if (goalState.timer > 0) {
                 goalState.timer -= dt;
-                if (goalState.timer <= 0) {
-                    goalState.active = false;
-                    topGoalNet.reset();
-                    resetBall();
-                }
             }
 
             ball.speed = Math.hypot(ball.vx, ball.vz);
@@ -3831,14 +3991,18 @@
                 }
             }
 
-            if (!goalState.active) {
+            if (matchLoop.is(MATCH_STATE.PLAYING)) {
                 for (let i = 0; i < characters.length; i++) {
                     updateCPUDefender(characters[i], simDt);
                 }
+            } else {
+                for (let i = 0; i < characters.length; i++) {
+                    idleCPUDefender(characters[i], simDt);
+                }
             }
 
-            // 进球与漏球判定
-            if (!goalState.active) {
+            // 进球与漏球判定 (严密限定仅在 PLAYING 状态下判分，杜绝连续重复计分与状态错乱)
+            if (matchLoop.canScore()) {
                 if (ball.z < G.topZ + 0.3) {
                     if (Math.abs(ball.x) < 3.25) {
                         // 进球！开启 1.65 秒慢动作定格与真实冲网物理
@@ -3848,16 +4012,11 @@
                         scoreP1++;
                         document.getElementById('score-p1').innerText = scoreP1;
                         triggerGoal();
-
-                        // 晋级条件判定：达到目标比分触发晋级
-                        if (scoreP1 >= tournamentState.targetScore) {
-                            setTimeout(() => {
-                                handleStageWin();
-                            }, 1200);
-                        }
+                        matchLoop.handlePlayerGoal();
                     } else {
-                        // 出界或击中球门侧柱外侧，直接重置
-                        resetBall();
+                        // 出界或击中球门侧柱外侧，直接重置发球
+                        prepareKickoff();
+                        startKickoffCountdown();
                     }
                 } else if (ballSaverTimer > 0 && ball.z >= 15.15 && ball.z <= 16.5 && Math.abs(ball.x) < 4.0) {
                     // 开球安全保护能量盾（Ball Saver）生效：强力反弹踢回场内，绝不丢分！
@@ -3873,14 +4032,10 @@
                     scoreCPU++;
                     document.getElementById('score-cpu').innerText = scoreCPU;
                     triggerDrain();
-                    resetBall();
-
-                    // 晋级失利判定：对手先达到目标比分
-                    if (scoreCPU >= tournamentState.targetScore) {
-                        setTimeout(() => {
-                            handleStageLose();
-                        }, 800);
-                    }
+                    ball.vx = 0;
+                    ball.vy = 0;
+                    ball.vz = 0;
+                    matchLoop.handleCpuGoal();
                 }
             }
 
@@ -4069,6 +4224,31 @@
                 );
             }
             spawnSparks(x, y, z, 0xfef08a);
+        }
+
+        function idleCPUDefender(c, dt) {
+            c.actionType = 'none';
+            c.actionTimer = 0;
+            c.time = (c.time || 0) + dt * (c.speed || 0.6);
+            const pos = c.group.position;
+            if (c.role === 'top_keeper') {
+                const targetX = (c.amplitude || 2.2) * Math.sin(c.time * 0.85);
+                pos.x += (targetX - pos.x) * Math.min(1.0, dt * 3.0);
+                pos.y = 0;
+            } else {
+                pos.x = c.baseX + (c.amplitude || 2.5) * Math.sin(c.time);
+                pos.z = c.baseZ;
+                pos.y = 0;
+            }
+            if (c.lLeg && c.rLeg) {
+                const runPhase = c.time * 3.2;
+                c.lLeg.rotation.x = Math.sin(runPhase) * 0.35;
+                c.rLeg.rotation.x = -Math.sin(runPhase) * 0.35;
+                if (c.lArm && c.rArm) {
+                    c.lArm.rotation.x = -Math.sin(runPhase) * 0.25;
+                    c.rArm.rotation.x = Math.sin(runPhase) * 0.25;
+                }
+            }
         }
 
         function updateCPUDefender(c, dt) {
@@ -4487,18 +4667,27 @@
                     if (!keyState.right) Sound.play('flipper', 0.8);
                     keyState.right = true;
                 }
-                if (e.code === 'Space') resetBall();
+                if (e.code === 'Space') {
+                    if (matchLoop.is(MATCH_STATE.READY)) {
+                        matchLoop.start();
+                    } else if (matchLoop.is(MATCH_STATE.PLAYING)) {
+                        prepareKickoff();
+                        startKickoffCountdown();
+                    }
+                }
                 if (e.key === 'g' || e.key === 'G') {
-                    // G 键：直接触发向球门内爆射物理测试
-                    ball.x = (Math.random() - 0.5) * 1.2;
-                    ball.y = 1.2;
-                    ball.z = -7.5;
-                    ball.vx = (Math.random() - 0.5) * 4.0;
-                    ball.vy = 2.2;
-                    ball.vz = -28.0;
-                    ballSlipstreamTimer = 1.35;
-                    ballSlipstreamCrit = true;
-                    Sound.play('kick_crit', 1.0);
+                    // G 键：直接触发向球门内爆射物理测试 (仅在 PLAYING 状态有效，不污染其它状态)
+                    if (matchLoop.is(MATCH_STATE.PLAYING)) {
+                        ball.x = (Math.random() - 0.5) * 1.2;
+                        ball.y = 1.2;
+                        ball.z = -7.5;
+                        ball.vx = (Math.random() - 0.5) * 4.0;
+                        ball.vy = 2.2;
+                        ball.vz = -28.0;
+                        ballSlipstreamTimer = 1.35;
+                        ballSlipstreamCrit = true;
+                        Sound.play('kick_crit', 1.0);
+                    }
                 }
                 if (e.key >= '1' && e.key <= '5') {
                     setReviewCamera(parseInt(e.key, 10));
@@ -4508,40 +4697,46 @@
                     if (rh) {
                         rh.style.display = (rh.style.display === 'none') ? 'block' : 'none';
                     }
-                    // 高空传中喂球，测试球员拔地跃起头球冲顶争顶！
-                    const targets = characters.filter(c => c.role !== 'top_keeper');
-                    if (targets.length > 0) {
-                        const target = targets[Math.floor(Math.random() * targets.length)];
-                        ball.x = target.group.position.x + (Math.random() - 0.5) * 0.3;
-                        ball.z = target.group.position.z + 1.2;
-                        ball.y = 2.5;
-                        ball.vx = (Math.random() - 0.5) * 1.5;
-                        ball.vy = -1.2;
-                        ball.vz = -10.0;
+                    if (matchLoop.is(MATCH_STATE.PLAYING)) {
+                        // 高空传中喂球，测试球员拔地跃起头球冲顶争顶！
+                        const targets = characters.filter(c => c.role !== 'top_keeper');
+                        if (targets.length > 0) {
+                            const target = targets[Math.floor(Math.random() * targets.length)];
+                            ball.x = target.group.position.x + (Math.random() - 0.5) * 0.3;
+                            ball.z = target.group.position.z + 1.2;
+                            ball.y = 2.5;
+                            ball.vx = (Math.random() - 0.5) * 1.5;
+                            ball.vy = -1.2;
+                            ball.vz = -10.0;
+                        }
                     }
                 }
                 if (e.key === 'k' || e.key === 'K') {
                     // K 键：贴地快球喂球，测试球员外脚背抽射！
-                    const targets = characters.filter(c => c.role !== 'top_keeper');
-                    const target = targets[Math.floor(Math.random() * targets.length)];
-                    ball.x = target.group.position.x + (Math.random() - 0.5) * 0.3;
-                    ball.z = target.group.position.z + 1.6;
-                    ball.y = G.ballR;
-                    ball.vx = (Math.random() - 0.5) * 2.0;
-                    ball.vy = 0;
-                    ball.vz = -12.0;
+                    if (matchLoop.is(MATCH_STATE.PLAYING)) {
+                        const targets = characters.filter(c => c.role !== 'top_keeper');
+                        const target = targets[Math.floor(Math.random() * targets.length)];
+                        ball.x = target.group.position.x + (Math.random() - 0.5) * 0.3;
+                        ball.z = target.group.position.z + 1.6;
+                        ball.y = G.ballR;
+                        ball.vx = (Math.random() - 0.5) * 2.0;
+                        ball.vy = 0;
+                        ball.vz = -12.0;
+                    }
                 }
                 if (e.key === 'c' || e.key === 'C' || e.key === 'j' || e.key === 'J') {
                     // C / J 键：角球弧线高空传中 (Corner Kick Cross)
-                    const isRightCorner = Math.random() > 0.5;
-                    ball.x = isRightCorner ? 5.2 : -5.2;
-                    ball.z = -10.5;
-                    ball.y = 0.5;
-                    ball.vx = isRightCorner ? -11.0 : 11.0;
-                    ball.vy = 8.5; // 高空挑起
-                    ball.vz = 8.0;  // 旋向禁区点球点附近
-                    Sound.play('kick', 1.0, 1.2);
-                    spawnHeaderAirburst(ball.x, 0.6, ball.z);
+                    if (matchLoop.is(MATCH_STATE.PLAYING)) {
+                        const isRightCorner = Math.random() > 0.5;
+                        ball.x = isRightCorner ? 5.2 : -5.2;
+                        ball.z = -10.5;
+                        ball.y = 0.5;
+                        ball.vx = isRightCorner ? -11.0 : 11.0;
+                        ball.vy = 8.5; // 高空挑起
+                        ball.vz = 8.0;  // 旋向禁区点球点附近
+                        Sound.play('kick', 1.0, 1.2);
+                        spawnHeaderAirburst(ball.x, 0.6, ball.z);
+                    }
                 }
                 if (e.key === 'p' || e.key === 'P') {
                     setPitchStyle(currentPitchStyleIdx + 1);
@@ -4564,15 +4759,50 @@
             const tLeft = document.getElementById('touch-left');
             const tRight = document.getElementById('touch-right');
 
-            tLeft.addEventListener('pointerdown', () => { Sound.play('flipper', 0.8); keyState.left = true; });
+            tLeft.addEventListener('pointerdown', () => {
+                if (matchLoop.is(MATCH_STATE.READY)) {
+                    matchLoop.start();
+                    return;
+                }
+                Sound.play('flipper', 0.8);
+                keyState.left = true;
+            });
             tLeft.addEventListener('pointerup', () => { keyState.left = false; });
             tLeft.addEventListener('pointercancel', () => { keyState.left = false; });
 
-            tRight.addEventListener('pointerdown', () => { Sound.play('flipper', 0.8); keyState.right = true; });
+            tRight.addEventListener('pointerdown', () => {
+                if (matchLoop.is(MATCH_STATE.READY)) {
+                    matchLoop.start();
+                    return;
+                }
+                Sound.play('flipper', 0.8);
+                keyState.right = true;
+            });
             tRight.addEventListener('pointerup', () => { keyState.right = false; });
             tRight.addEventListener('pointercancel', () => { keyState.right = false; });
 
-            document.getElementById('btn-reset').addEventListener('click', resetBall);
+            // 开局轻量 Ready to Play 启动交互
+            const btnReadyStart = document.getElementById('btn-ready-start');
+            if (btnReadyStart) {
+                btnReadyStart.addEventListener('click', () => {
+                    matchLoop.start();
+                });
+            }
+            const readyOverlay = document.getElementById('ready-overlay');
+            if (readyOverlay) {
+                readyOverlay.addEventListener('click', (e) => {
+                    if (e.target !== btnReadyStart) {
+                        matchLoop.start();
+                    }
+                });
+            }
+
+            document.getElementById('btn-reset').addEventListener('click', () => {
+                if (matchLoop.is(MATCH_STATE.PLAYING) || matchLoop.is(MATCH_STATE.READY)) {
+                    prepareKickoff();
+                    startKickoffCountdown();
+                }
+            });
             document.getElementById('btn-camera').addEventListener('click', toggleCameraMode);
             document.getElementById('btn-sound').addEventListener('click', () => {
                 Sound.enabled = !Sound.enabled;
@@ -4637,52 +4867,153 @@
             });
 
             document.getElementById('btn-next-stage').addEventListener('click', () => {
-                closeModals();
-                tournamentState.currentStage++;
-                setupStageRoster(tournamentState.currentStage);
-                scoreP1 = 0;
-                scoreCPU = 0;
-                document.getElementById('score-p1').innerText = '0';
-                document.getElementById('score-cpu').innerText = '0';
-                resetBall();
-                showPitchToast(`🚀 进入「${TOURNAMENT_STAGES[tournamentState.currentStage].name}」！`);
+                matchLoop.advanceStage();
             });
 
             document.getElementById('btn-retry-stage').addEventListener('click', () => {
-                closeModals();
-                setupStageRoster(tournamentState.currentStage);
-                scoreP1 = 0;
-                scoreCPU = 0;
-                document.getElementById('score-p1').innerText = '0';
-                document.getElementById('score-cpu').innerText = '0';
-                resetBall();
-                showPitchToast(`🔄 重新开始「${TOURNAMENT_STAGES[tournamentState.currentStage].name}」！`);
+                matchLoop.retryStage();
             });
 
             document.getElementById('btn-restart-career').addEventListener('click', () => {
-                closeModals();
-                tournamentState.currentStage = 0;
-                setupStageRoster(0);
-                scoreP1 = 0;
-                scoreCPU = 0;
-                document.getElementById('score-p1').innerText = '0';
-                document.getElementById('score-cpu').innerText = '0';
-                resetBall();
-                showPitchToast(`🏅 重启晋级赛：从第 1 轮初赛起步！`);
+                matchLoop.restartCareer();
             });
 
             document.getElementById('btn-endless-11').addEventListener('click', () => {
-                closeModals();
-                tournamentState.currentStage = 7;
-                setupStageRoster(7);
-                scoreP1 = 0;
-                scoreCPU = 0;
-                document.getElementById('score-p1').innerText = '0';
-                document.getElementById('score-cpu').innerText = '0';
-                resetBall();
-                showPitchToast(`⚽ 传奇对决：11 人满编国家队无尽挑战！`);
+                matchLoop.startEndless();
             });
         }
+
+        /* ==========================================================================
+           11.1 Match Loop 状态机与引擎桥接 (Match Loop Integration)
+           ========================================================================== */
+        function initMatchLoop() {
+            matchLoop.init({
+                onStateChange(newState, oldState) {
+                    const readyEl = document.getElementById('ready-overlay');
+                    if (readyEl) {
+                        if (newState === MATCH_STATE.READY) {
+                            readyEl.classList.add('active');
+                        } else {
+                            readyEl.classList.remove('active');
+                        }
+                    }
+                },
+                onCountdownTick(val) {
+                    const cb = document.getElementById('countdown-banner');
+                    if (!cb) return;
+                    if (val === 'GO') {
+                        cb.innerText = 'GO!';
+                        cb.classList.add('go');
+                        cb.classList.add('show');
+                        Sound.play('whistle', 0.8, 1.15);
+                    } else {
+                        cb.innerText = String(val);
+                        cb.classList.remove('go');
+                        cb.classList.add('show');
+                        Sound.play('kick', 0.8, 1.4);
+                    }
+                },
+                onCountdownEnd() {
+                    const cb = document.getElementById('countdown-banner');
+                    if (cb) {
+                        cb.classList.remove('show');
+                        cb.classList.remove('go');
+                    }
+                },
+                onKickoffRelease: releaseKickoffBall,
+                onGoalPauseEnd() {
+                    goalState.active = false;
+                    topGoalNet.reset();
+                },
+                onPrepareNextKickoff() {
+                    prepareKickoff();
+                },
+                onStageWin(isChampion) {
+                    handleStageWin(isChampion);
+                },
+                onStageLose() {
+                    handleStageLose();
+                },
+                onAdvanceStage() {
+                    closeModals();
+                    tournamentState.currentStage++;
+                    setupStageRoster(tournamentState.currentStage);
+                    scoreP1 = 0;
+                    scoreCPU = 0;
+                    document.getElementById('score-p1').innerText = '0';
+                    document.getElementById('score-cpu').innerText = '0';
+                    prepareKickoff();
+                    startKickoffCountdown();
+                    showPitchToast(`🚀 进入「${TOURNAMENT_STAGES[tournamentState.currentStage].name}」！`);
+                },
+                onRetryStage() {
+                    closeModals();
+                    setupStageRoster(tournamentState.currentStage);
+                    scoreP1 = 0;
+                    scoreCPU = 0;
+                    document.getElementById('score-p1').innerText = '0';
+                    document.getElementById('score-cpu').innerText = '0';
+                    prepareKickoff();
+                    startKickoffCountdown();
+                    showPitchToast(`🔄 重新开始「${TOURNAMENT_STAGES[tournamentState.currentStage].name}」！`);
+                },
+                onRestartCareer() {
+                    closeModals();
+                    tournamentState.currentStage = 0;
+                    tournamentState.isCompleted = false;
+                    setupStageRoster(0);
+                    scoreP1 = 0;
+                    scoreCPU = 0;
+                    document.getElementById('score-p1').innerText = '0';
+                    document.getElementById('score-cpu').innerText = '0';
+                    prepareKickoff();
+                    startKickoffCountdown();
+                    showPitchToast(`🏅 重启晋级赛：从第 1 轮初赛起步！`);
+                },
+                onStartEndless() {
+                    closeModals();
+                    tournamentState.currentStage = 7;
+                    setupStageRoster(7);
+                    scoreP1 = 0;
+                    scoreCPU = 0;
+                    document.getElementById('score-p1').innerText = '0';
+                    document.getElementById('score-cpu').innerText = '0';
+                    prepareKickoff();
+                    startKickoffCountdown();
+                    showPitchToast(`⚽ 传奇对决：11 人满编国家队无尽挑战！`);
+                },
+                getScoreP1: () => scoreP1,
+                getScoreCPU: () => scoreCPU,
+                getTargetScore: () => tournamentState.targetScore,
+                getCurrentStage: () => tournamentState.currentStage,
+                getMaxStage: () => TOURNAMENT_STAGES.length - 1
+            });
+        }
+        window.initMatchLoop = initMatchLoop;
+
+        // 开发与自动化 QA 专用的状态全量快照检测接口
+        window.__matchDebug = function() {
+            return {
+                state: matchLoop.getState(),
+                stage: tournamentState.currentStage,
+                stageName: TOURNAMENT_STAGES[tournamentState.currentStage] ? TOURNAMENT_STAGES[tournamentState.currentStage].name : '',
+                playerScore: scoreP1,
+                cpuScore: scoreCPU,
+                targetScore: tournamentState.targetScore,
+                ballState: {
+                    x: ball ? Number(ball.x.toFixed(2)) : 0,
+                    y: ball ? Number(ball.y.toFixed(2)) : 0,
+                    z: ball ? Number(ball.z.toFixed(2)) : 0,
+                    vx: ball ? Number(ball.vx.toFixed(2)) : 0,
+                    vy: ball ? Number(ball.vy.toFixed(2)) : 0,
+                    vz: ball ? Number(ball.vz.toFixed(2)) : 0,
+                    speed: ball ? Number(ball.speed.toFixed(2)) : 0,
+                    saverTimer: Number(ballSaverTimer.toFixed(2))
+                },
+                goalActive: !!goalState.active,
+                players: characters ? characters.length : 0
+            };
+        };
 
         window.closeModals = function() {
             document.getElementById('modal-cover').classList.remove('active');
@@ -4710,6 +5041,7 @@
                 window.__reviewTickFrame();
             }
 
+            matchLoop.update(dt);
             physicsTick(dt);
             updateParticles(dt);
             updateSmokeSystem(dt);
