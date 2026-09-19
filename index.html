@@ -528,7 +528,7 @@
             </div>
             <div class="review-row"><span>Ball:</span> <b style="color: #38bdf8;">External</b></div>
             <div class="review-row"><span>Stadium:</span> <b style="color: #38bdf8;">Football Court</b></div>
-            <div class="review-row"><span>Player:</span> <b style="color: #f59e0b;">Alien Technical Dummy</b></div>
+            <div class="review-row"><span>Player:</span> <b id="review-player-skin" style="color: #f59e0b;">Alien Technical Dummy</b></div>
             <div class="review-row"><span>Players:</span> <b id="review-players">--</b></div>
             <div class="review-row"><span>Draw Calls:</span> <b id="review-calls">--</b></div>
             <div class="review-row"><span>Triangles:</span> <b id="review-tris">--</b></div>
@@ -539,6 +539,8 @@
     <!-- 核心 3D 渲染库 -->
     <script src="libs/three.min.js"></script>
     <script src="libs/loaders/GLTFLoader.js"></script>
+    <script src="libs/loaders/fflate.min.js"></script>
+    <script src="libs/loaders/FBXLoader.js"></script>
     <script src="libs/utils/BufferGeometryUtils.js"></script>
     <script src="libs/utils/SkeletonUtils.js"></script>
     <!-- Visual 2.0 模块化架构 -->
@@ -1468,8 +1470,12 @@
                 const playersEl = document.getElementById('review-players');
                 const callsEl = document.getElementById('review-calls');
                 const trisEl = document.getElementById('review-tris');
+                const skinEl = document.getElementById('review-player-skin');
                 if (fpsEl) fpsEl.innerText = `${currentFps} FPS`;
                 if (playersEl) playersEl.innerText = `${characters ? characters.length : 0}`;
+                if (skinEl && window.ExternalPlayers && window.ExternalPlayers.getSkinDisplayName) {
+                    skinEl.innerText = window.ExternalPlayers.getSkinDisplayName();
+                }
                 if (renderer && renderer.info) {
                     if (callsEl) callsEl.innerText = `${renderer.info.render.calls}`;
                     if (trisEl) trisEl.innerText = `${renderer.info.render.triangles.toLocaleString()}`;
