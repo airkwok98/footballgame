@@ -27,18 +27,18 @@
             this.callbacks = Object.assign(this.callbacks, cbs);
         }
 
-        execute(ball, netSystem) {
+        execute(ball, netSystem, isWinningGoal = false) {
             this.active = true;
             this.timer = 0;
 
-            // 1. Trigger 50ms Hit Stop
+            // 1. Trigger Goal Camera Sequence & Hit Stop
             if (window.Visual2 && window.Visual2.cameraDirector) {
-                window.Visual2.cameraDirector.triggerGoal();
+                window.Visual2.cameraDirector.triggerGoal(isWinningGoal);
             }
 
             // 2. Trigger Post-Processing Exposure / Bloom Pulse
             if (window.Visual2 && window.Visual2.postprocessing) {
-                window.Visual2.postprocessing.triggerExposurePulse(1.45, 240, 'gold');
+                window.Visual2.postprocessing.triggerExposurePulse(isWinningGoal ? 1.45 : 1.30, isWinningGoal ? 260 : 180, 'gold');
             }
 
             // 3. Trigger Net impact flash

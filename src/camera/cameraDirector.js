@@ -26,6 +26,8 @@
             this.goalSequenceActive = false;
             this.goalTimer = 0;
             this.hitStopRemaining = 0;
+            this.isWinningGoal = false;
+            this.shakeDecay = 9.0;
         }
 
         init(camera, basePos, baseTarget, baseFov) {
@@ -41,25 +43,38 @@
             this.baseFov = fov;
         }
 
-        triggerSweetSpot(impulse = 0.12) {
-            this.shakeIntensity = Math.max(this.shakeIntensity, impulse);
-        }
-
-        triggerRocketShot(dirX, dirZ, impulse = 0.28) {
-            this.shakeIntensity = Math.max(this.shakeIntensity, impulse);
-            this.fovPunch = 2.0; // drops FOV by 2 degrees (zoom punch)
-            if (dirX !== undefined && dirZ !== undefined) {
-                this.offsetPos.x -= dirX * 0.35;
-                this.offsetPos.z -= dirZ * 0.35;
+        impactCameraKick(intensity = 0.05, dirX = 0, dirZ = 0) {
+            // Unified impulse punch: max/additive policy to prevent sudden spikes
+            this.shakeIntensity = Math.min(0.55, Math.max(this.shakeIntensity, intensity * 0.7) + intensity * 0.3);
+            if (intensity >= 0.15) {
+                this.fovPunch = Math.min(4.5, this.fovPunch + intensity * 6.5);
+            }
+            if (dirX !== 0 || dirZ !== 0) {
+                this.offsetPos.x -= dirX * intensity * 0.7;
+                this.offsetPos.z -= dirZ * intensity * 0.7;
             }
         }
 
-        triggerGoal() {
+        triggerScreenShake(amount, decay = 9.0) {
+            this.shakeIntensity = Math.min(0.60, Math.max(this.shakeIntensity, amount * 0.7) + amount * 0.3);
+            this.shakeDecay = decay;
+        }
+
+        triggerSweetSpot(impulse = 0.12) {
+            this.impactCameraKick(impulse);
+        }
+
+        triggerRocketShot(dirX, dirZ, impulse = 0.22) {
+            this.impactCameraKick(impulse, dirX, dirZ);
+        }
+
+        triggerGoal(isWinningGoal = false) {
             this.goalSequenceActive = true;
             this.goalTimer = 0;
-            this.hitStopRemaining = 0.05; // 50ms hit stop
-            this.shakeIntensity = 0.35;
-            this.fovPunch = 3.2;
+            this.isWinningGoal = isWinningGoal;
+            this.hitStopRemaining = isWinningGoal ? 0.26 : 0.18;
+            this.shakeIntensity = isWinningGoal ? 0.42 : 0.30;
+            this.fovPunch = isWinningGoal ? 4.2 : 3.0;
         }
 
         update(dt) {
@@ -104,7 +119,7 @@
                 shakeX = Math.cos(angle) * this.shakeIntensity;
                 shakeY = Math.sin(angle) * this.shakeIntensity * 0.6;
                 shakeZ = (Math.random() - 0.5) * this.shakeIntensity * 0.5;
-                this.shakeIntensity *= Math.max(0, 1.0 - dt * 9.0);
+                this.shakeIntensity *= Math.max(0, 1.0 - dt * (this.shakeDecay || 9.0));
             } else {
                 this.shakeIntensity = 0;
             }
