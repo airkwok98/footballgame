@@ -530,6 +530,8 @@
             <div class="review-row"><span>Stadium:</span> <b style="color: #38bdf8;">Football Court</b></div>
             <div class="review-row"><span>Player:</span> <b id="review-player-skin" style="color: #f59e0b;">Alien Technical Dummy</b></div>
             <div class="review-row"><span>Players:</span> <b id="review-players">--</b></div>
+            <div class="review-row"><span>Feel Mode:</span> <b id="review-feel" style="color: #38bdf8;">V1</b></div>
+            <div class="review-row"><span>Particles:</span> <b id="review-particles">--</b></div>
             <div class="review-row"><span>Draw Calls:</span> <b id="review-calls">--</b></div>
             <div class="review-row"><span>Triangles:</span> <b id="review-tris">--</b></div>
             <div class="review-hint">[H] Toggle HUD · [1-5] Cameras</div>
@@ -552,6 +554,7 @@
     <script src="src/actors/playerVisual.js"></script>
     <script src="src/actors/externalPlayer.js"></script>
     <script src="src/effects/goalImpactStack.js"></script>
+    <script src="src/effects/gameFeel.js"></script>
     <script src="src/actors/stadiumCrowd.js"></script>
     <!-- External GLTF 资产模块 -->
     <script src="src/assets/gltfAssetLoader.js"></script>
@@ -1292,6 +1295,58 @@
                         spawnTurfBits(ball.x, 0.2, ball.z, 0x86efac);
                         spawnSparks(ball.x, 0.4, ball.z, 0xffffff);
                     }, 250);
+                } else if (testParam === 'feel_normal') {
+                    setTimeout(() => {
+                        keyState.left = true;
+                        ball.x = -1.8; ball.y = G.ballR; ball.z = 13.8;
+                        ball.vx = 4.0; ball.vz = -18.0;
+                        if (window.Visual2 && window.Visual2.gameFeel) {
+                            window.Visual2.gameFeel.triggerNormalTouch(ball.x, ball.y, ball.z, 0.4, -0.9);
+                        }
+                    }, 250);
+                } else if (testParam === 'feel_strong') {
+                    setTimeout(() => {
+                        const target = characters.find(c => c.role === 'defender') || characters[1];
+                        if (target) {
+                            target.actionType = 'kick_right';
+                            target.actionDuration = 0.65;
+                            target.actionTimer = 0.65;
+                            ball.x = target.group.position.x + 0.25;
+                            ball.z = target.group.position.z + 0.35;
+                        } else {
+                            ball.x = 0; ball.z = 8.0;
+                        }
+                        ball.y = G.ballR;
+                        ball.vx = 0.8; ball.vz = 22.0;
+                        if (window.Visual2 && window.Visual2.gameFeel) {
+                            window.Visual2.gameFeel.triggerStrongHit(ball.x, ball.y, ball.z, 0, 1, true);
+                        }
+                    }, 250);
+                } else if (testParam === 'feel_rocket') {
+                    setTimeout(() => {
+                        keyState.right = true;
+                        ball.x = 1.0; ball.y = G.ballR; ball.z = 12.8;
+                        ball.vx = -12.0; ball.vz = -48.0;
+                        ballSlipstreamTimer = 1.35;
+                        ballSlipstreamCrit = true;
+                        spawnImpactSmokeBurst(ball.x, ball.z, -0.4, -0.9, true);
+                        if (window.Visual2 && window.Visual2.gameFeel) {
+                            window.Visual2.gameFeel.triggerRocketShot(ball.x, ball.y, ball.z, -0.4, -0.9);
+                        }
+                        const crit = document.getElementById('crit-banner');
+                        if (crit) crit.classList.add('show');
+                    }, 250);
+                } else if (testParam === 'feel_goal') {
+                    setTimeout(() => {
+                        ball.x = 0.35; ball.y = 1.25; ball.z = G.topZ - 1.2;
+                        ball.vx = 0.4; ball.vy = 0.2; ball.vz = -16.0;
+                        goalState.active = true;
+                        goalState.timer = 1.65;
+                        scoreP1++;
+                        const sEl = document.getElementById('score-p1');
+                        if (sEl) sEl.innerText = scoreP1;
+                        triggerGoal(false);
+                    }, 250);
                 }
 
                 setInterval(() => {
@@ -1445,7 +1500,8 @@
         window.REVIEW_CAMERA_PRESETS = REVIEW_CAMERA_PRESETS;
 
         function initReviewHUD() {
-            const isReview = (new URLSearchParams(window.location.search).get('review') || '').toLowerCase() === 'current';
+            const reviewParam = (new URLSearchParams(window.location.search).get('review') || '').toLowerCase();
+            const isReview = reviewParam === '1' || reviewParam === 'true' || reviewParam === 'current';
             const rh = document.getElementById('review-hud');
             if (!rh) return;
             if (isReview) {
@@ -1473,6 +1529,17 @@
                 const skinEl = document.getElementById('review-player-skin');
                 if (fpsEl) fpsEl.innerText = `${currentFps} FPS`;
                 if (playersEl) playersEl.innerText = `${characters ? characters.length : 0}`;
+                const feelEl = document.getElementById('review-feel');
+                if (feelEl && window.Visual2 && window.Visual2.gameFeel) {
+                    feelEl.innerText = window.Visual2.gameFeel.version.toUpperCase();
+                }
+                const partEl = document.getElementById('review-particles');
+                if (partEl) {
+                    const totalP = (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2')
+                        ? window.Visual2.gameFeel.getTotalActiveParticles()
+                        : (particles.length + ballTrailParticles.length);
+                    partEl.innerText = `${totalP}`;
+                }
                 if (skinEl && window.ExternalPlayers && window.ExternalPlayers.getSkinDisplayName) {
                     skinEl.innerText = window.ExternalPlayers.getSkinDisplayName();
                 }
@@ -2085,6 +2152,11 @@
             // Visual 2.0: 升级 PBR 真实皮革反光与 Rocket Shot 菲涅尔能量着色器
             if (window.Visual2 && window.Visual2.ball) {
                 window.Visual2.ball.init(ball.mesh, { classic: textures.classic, magma: textures.magma });
+            }
+
+            // Visual 2.0 (VS03-C): 初始化打击感与比赛反馈引擎
+            if (window.Visual2 && window.Visual2.gameFeel) {
+                window.Visual2.gameFeel.init(scene, camera, ball, Sound);
             }
 
             // External 3D Asset: 若开启 ?assets=external，挂载外部超写实足球模型并自动校准尺寸与中心
@@ -3575,10 +3647,18 @@
                 return;
             }
             let simDt = dt;
-            // 进球后的庆祝慢动作，射门冲刺过程绝不提前减速！
-            if (goalCelebrationTimer > 0) {
-                goalCelebrationTimer -= dt;
-                simDt = dt * 0.35;
+            if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                simDt = window.Visual2.gameFeel.getSimDt(dt);
+                if (simDt <= 0.00001) {
+                    // Hit stop: pause physical substeps cleanly without desync
+                    return;
+                }
+            } else {
+                // 进球后的庆祝慢动作，射门冲刺过程绝不提前减速！
+                if (goalCelebrationTimer > 0) {
+                    goalCelebrationTimer -= dt;
+                    simDt = dt * 0.35;
+                }
             }
 
             const SUB_STEPS = 8;
@@ -3614,9 +3694,15 @@
                     const hits = topGoalNet.update(subDt, ball);
                     if (hits > 0 && !goalState.netSoundPlayed) {
                         goalState.netSoundPlayed = true;
-                        Sound.play('net_impact', 1.0);
-                        screenShake = Math.max(screenShake, 0.45);
-                        spawnSparks(ball.x, ball.y, ball.z, 0xffffff);
+                        if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                            Sound.play('net_impact', 0.95);
+                            window.Visual2.gameFeel.impactCameraKick(0.20);
+                            window.Visual2.gameFeel.triggerScreenShake(0.25, 8.0);
+                        } else {
+                            Sound.play('net_impact', 1.0);
+                            screenShake = Math.max(screenShake, 0.45);
+                            spawnSparks(ball.x, ball.y, ball.z, 0xffffff);
+                        }
                     }
                 } else {
                     // 球场台面动力学：向上射门时保持充沛强劲冲量（仅微弱阻力），向下回落时全重力滑落
@@ -3759,10 +3845,11 @@
                         goalState.netSoundPlayed = false;
                         scoreP1++;
                         document.getElementById('score-p1').innerText = scoreP1;
-                        triggerGoal();
+                        const isWinning = (scoreP1 >= tournamentState.targetScore);
+                        triggerGoal(isWinning);
 
                         // 晋级条件判定：达到目标比分触发晋级
-                        if (scoreP1 >= tournamentState.targetScore) {
+                        if (isWinning) {
                             setTimeout(() => {
                                 handleStageWin();
                             }, 1200);
@@ -3776,9 +3863,13 @@
                     ball.z = 15.0;
                     ball.vz = -21.0;
                     ball.vx = (Math.random() - 0.5) * 8.0;
-                    screenShake = 0.32;
-                    Sound.play('bounce', 1.0, 1.4);
-                    spawnSparks(ball.x, 0.45, ball.z, 0x38bdf8);
+                    if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                        window.Visual2.gameFeel.triggerStrongHit(ball.x, 0.45, ball.z, 0, -1, false);
+                    } else {
+                        screenShake = 0.32;
+                        Sound.play('bounce', 1.0, 1.4);
+                        spawnSparks(ball.x, 0.45, ball.z, 0x38bdf8);
+                    }
                     showPitchToast('🛡️ 开球保护生效！能量网强力反弹！');
                     ballSaverTimer = Math.min(ballSaverTimer, 0.8);
                 } else if (ball.z > 16.0) {
@@ -3834,12 +3925,16 @@
 
                     comboCount++;
                     comboResetTimer = 2.0;
-                    Sound.playComboNote(comboCount);
-                    Sound.play('bounce', 0.7, 1.0 + Math.min(0.5, comboCount * 0.05));
+                    if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                        window.Visual2.gameFeel.triggerCombo(comboCount);
+                    } else {
+                        Sound.playComboNote(comboCount);
+                        Sound.play('bounce', 0.7, 1.0 + Math.min(0.5, comboCount * 0.05));
 
-                    const badge = document.getElementById('combo-badge');
-                    badge.innerText = `🔥 COMBO x${comboCount}`;
-                    badge.classList.add('show');
+                        const badge = document.getElementById('combo-badge');
+                        badge.innerText = `🔥 COMBO x${comboCount}`;
+                        badge.classList.add('show');
+                    }
                 }
             }
         }
@@ -3883,35 +3978,68 @@
                     ball.vx = nx * (isSweetSpot ? 26.0 : 18.0) + (isRight ? -6.0 : 6.0);
                     ball.vz = -boostPower;
 
-                    // 击中挡杆飞出的一瞬间：激活 1.35 秒破空烟雾与气流拖尾！
-                    ballSlipstreamTimer = 1.35;
-                    ballSlipstreamCrit = isSweetSpot;
-                    lastTrailX = ball.x;
-                    lastTrailZ = ball.z;
-                    spawnImpactSmokeBurst(ball.x, ball.z, nx, nz, isSweetSpot);
-
-                    // Visual 2.0: 接入挡杆冲击光闪烁、相机震颤冲拳与足球 Rocket Shot 能量状态
-                    if (window.Visual2) {
+                    if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
                         if (window.Visual2.flippers) window.Visual2.flippers.triggerImpactFlash(isRight, isSweetSpot);
                         if (isSweetSpot) {
-                            if (window.Visual2.cameraDirector) window.Visual2.cameraDirector.triggerRocketShot(nx, nz, 0.35);
-                            if (window.Visual2.postprocessing) window.Visual2.postprocessing.triggerExposurePulse(1.35, 160, 'gold');
-                            if (window.Visual2.ball) window.Visual2.ball.setRocketState(true, 1.25);
+                            // LEVEL 3: Rocket / Critical Shot
+                            ballSlipstreamTimer = 1.35;
+                            ballSlipstreamCrit = true;
+                            lastTrailX = ball.x;
+                            lastTrailZ = ball.z;
+                            spawnImpactSmokeBurst(ball.x, ball.z, nx, nz, true);
+                            window.Visual2.gameFeel.triggerRocketShot(ball.x, 0.5, ball.z, nx, nz);
+                            const crit = document.getElementById('crit-banner');
+                            if (crit) {
+                                crit.classList.add('show');
+                                setTimeout(() => crit.classList.remove('show'), 600);
+                            }
                         } else {
-                            if (window.Visual2.cameraDirector) window.Visual2.cameraDirector.triggerSweetSpot(0.12);
-                            if (window.Visual2.postprocessing) window.Visual2.postprocessing.triggerExposurePulse(1.15, 90, 'cyan');
-                            if (window.Visual2.ball) window.Visual2.ball.setRocketState(false, 0.0);
+                            // Check if this is a Strong Hit or Normal Touch based on ball speed / swing
+                            const prevSpeed = Math.hypot(ball.vx, ball.vz);
+                            if (prevSpeed > 22.0 || Math.abs(f.omega) > 1.2) {
+                                // LEVEL 2: Strong Hit
+                                ballSlipstreamTimer = 0.8;
+                                ballSlipstreamCrit = false;
+                                lastTrailX = ball.x;
+                                lastTrailZ = ball.z;
+                                spawnImpactSmokeBurst(ball.x, ball.z, nx, nz, false);
+                                window.Visual2.gameFeel.triggerStrongHit(ball.x, 0.5, ball.z, nx, nz, false);
+                            } else {
+                                // LEVEL 1: Normal Touch
+                                window.Visual2.gameFeel.triggerNormalTouch(ball.x, 0.5, ball.z, nx, nz);
+                            }
                         }
-                    }
+                    } else {
+                        // 击中挡杆飞出的一瞬间：激活 1.35 秒破空烟雾与气流拖尾！
+                        ballSlipstreamTimer = 1.35;
+                        ballSlipstreamCrit = isSweetSpot;
+                        lastTrailX = ball.x;
+                        lastTrailZ = ball.z;
+                        spawnImpactSmokeBurst(ball.x, ball.z, nx, nz, isSweetSpot);
 
-                    screenShake = isSweetSpot ? 0.8 : 0.4;
-                    Sound.play(isSweetSpot ? 'kick_crit' : 'kick', 1.0, isSweetSpot ? 1.0 : 1.1);
-                    spawnSparks(ball.x, 0.5, ball.z, isSweetSpot ? 0xfacc15 : 0xffffff);
+                        // Visual 2.0: 接入挡杆冲击光闪烁、相机震颤冲拳与足球 Rocket Shot 能量状态
+                        if (window.Visual2) {
+                            if (window.Visual2.flippers) window.Visual2.flippers.triggerImpactFlash(isRight, isSweetSpot);
+                            if (isSweetSpot) {
+                                if (window.Visual2.cameraDirector) window.Visual2.cameraDirector.triggerRocketShot(nx, nz, 0.35);
+                                if (window.Visual2.postprocessing) window.Visual2.postprocessing.triggerExposurePulse(1.35, 160, 'gold');
+                                if (window.Visual2.ball) window.Visual2.ball.setRocketState(true, 1.25);
+                            } else {
+                                if (window.Visual2.cameraDirector) window.Visual2.cameraDirector.triggerSweetSpot(0.12);
+                                if (window.Visual2.postprocessing) window.Visual2.postprocessing.triggerExposurePulse(1.15, 90, 'cyan');
+                                if (window.Visual2.ball) window.Visual2.ball.setRocketState(false, 0.0);
+                            }
+                        }
 
-                    if (isSweetSpot) {
-                        const crit = document.getElementById('crit-banner');
-                        crit.classList.add('show');
-                        setTimeout(() => crit.classList.remove('show'), 600);
+                        screenShake = isSweetSpot ? 0.8 : 0.4;
+                        Sound.play(isSweetSpot ? 'kick_crit' : 'kick', 1.0, isSweetSpot ? 1.0 : 1.1);
+                        spawnSparks(ball.x, 0.5, ball.z, isSweetSpot ? 0xfacc15 : 0xffffff);
+
+                        if (isSweetSpot) {
+                            const crit = document.getElementById('crit-banner');
+                            crit.classList.add('show');
+                            setTimeout(() => crit.classList.remove('show'), 600);
+                        }
                     }
                 } else {
                     if (window.Visual2 && window.Visual2.flippers) {
@@ -3921,15 +4049,24 @@
                     if (dot < 0) {
                         ball.vx -= 1.82 * dot * nx;
                         ball.vz -= 1.82 * dot * nz;
-                        Sound.play('bounce', 0.85);
 
-                        // 强劲弹离亦激发气流拖尾
-                        if (ball.vz < -12.0) {
-                            ballSlipstreamTimer = 1.0;
-                            ballSlipstreamCrit = false;
-                            lastTrailX = ball.x;
-                            lastTrailZ = ball.z;
-                            spawnImpactSmokeBurst(ball.x, ball.z, nx, nz, false);
+                        if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                            if (Math.abs(ball.vz) > 16.0) {
+                                window.Visual2.gameFeel.triggerStrongHit(ball.x, 0.5, ball.z, nx, nz, false);
+                            } else {
+                                window.Visual2.gameFeel.triggerNormalTouch(ball.x, 0.5, ball.z, nx, nz);
+                            }
+                        } else {
+                            Sound.play('bounce', 0.85);
+
+                            // 强劲弹离亦激发气流拖尾
+                            if (ball.vz < -12.0) {
+                                ballSlipstreamTimer = 1.0;
+                                ballSlipstreamCrit = false;
+                                lastTrailX = ball.x;
+                                lastTrailZ = ball.z;
+                                spawnImpactSmokeBurst(ball.x, ball.z, nx, nz, false);
+                            }
                         }
                     }
                     if (ball.vz > -3.0) ball.vz = -3.0; // 保证弹离，不陷落
@@ -3939,6 +4076,10 @@
 
         function spawnTurfBits(x, y, z, color = 0x86efac) {
             if (new URLSearchParams(window.location.search).get('benchmarkPlayers') !== null) return;
+            if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                window.Visual2.gameFeel.spawnPooledTurf(x, y, z, 6);
+                return;
+            }
             for (let i = 0; i < 9; i++) {
                 const sp = new THREE.Mesh(
                     new THREE.BoxGeometry(0.08, 0.08, 0.08),
@@ -4203,9 +4344,13 @@
                     ballSlipstreamTimer = 0;
                     ballSlipstreamCrit = false;
                     if (window.Visual2 && window.Visual2.ball) window.Visual2.ball.reset();
-                    screenShake = 0.28;
-                    Sound.play('kick', 1.0, 0.95);
-                    spawnSparks(ball.x, 0.5, ball.z, 0x60a5fa);
+                    if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                        window.Visual2.gameFeel.triggerStrongHit(ball.x, 0.5, ball.z, 0, 1, false);
+                    } else {
+                        screenShake = 0.28;
+                        Sound.play('kick', 1.0, 0.95);
+                        spawnSparks(ball.x, 0.5, ball.z, 0x60a5fa);
+                    }
                 } else {
                     // 场上球员：随机 50% 头球 vs 50% 脚踢（高空来球优先头球争顶！）
                     const isHighBall = (ball.y > 0.65);
@@ -4245,9 +4390,16 @@
                             ball.vy = 5.2 + Math.random() * 2.0; // 强力腾空弧线
                         }
 
-                        screenShake = 0.35;
-                        Sound.play('header', 1.05, 1.0);
-                        spawnHeaderAirburst(pos.x, 1.9, pos.z);
+                        if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                            window.Visual2.gameFeel.impactCameraKick(0.12);
+                            window.Visual2.gameFeel.triggerScreenShake(0.18, 10.0);
+                            Sound.play('header', 1.0, 1.0);
+                            spawnHeaderAirburst(pos.x, 1.9, pos.z);
+                        } else {
+                            screenShake = 0.35;
+                            Sound.play('header', 1.05, 1.0);
+                            spawnHeaderAirburst(pos.x, 1.9, pos.z);
+                        }
                     } else {
                         // 触发脚踢抽射 / 外脚背推射
                         const isRightFoot = (ball.x >= pos.x) ? (Math.random() < 0.8) : (Math.random() < 0.2);
@@ -4262,10 +4414,14 @@
                         ball.vz = kickSpeed;
                         ball.vy = 0.6 + Math.random() * 0.8; // 贴地疾射
 
-                        screenShake = 0.32;
-                        Sound.play('kick', 1.1, 1.15);
-                        spawnTurfBits(ball.x, 0.2, ball.z, 0x86efac);
-                        spawnSparks(ball.x, 0.4, ball.z, 0xffffff);
+                        if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                            window.Visual2.gameFeel.triggerStrongHit(ball.x, 0.2, ball.z, 0, 1, true); // Turf only, no sparks!
+                        } else {
+                            screenShake = 0.32;
+                            Sound.play('kick', 1.1, 1.15);
+                            spawnTurfBits(ball.x, 0.2, ball.z, 0x86efac);
+                            spawnSparks(ball.x, 0.4, ball.z, 0xffffff);
+                        }
                     }
 
                     ballSlipstreamTimer = 0;
@@ -4276,6 +4432,10 @@
         }
 
         function spawnTrailParticle(x, z) {
+            if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                window.Visual2.gameFeel.spawnPooledTrail(x, 0.5, z, currentSkin === 'magma' ? 0xef4444 : 0x38bdf8);
+                return;
+            }
             const p = new THREE.Mesh(
                 new THREE.SphereGeometry(0.18, 6, 6),
                 new THREE.MeshBasicMaterial({ color: (currentSkin === 'magma' ? 0xef4444 : 0x38bdf8), transparent: true, opacity: 0.8 })
@@ -4287,6 +4447,11 @@
 
         function spawnSparks(x, y, z, color) {
             if (new URLSearchParams(window.location.search).get('benchmarkPlayers') !== null) return;
+            if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                const colorKey = (color === 0xfacc15 || color === 0xfef08a) ? 'gold' : (color === 0x38bdf8 ? 'cyan' : (color === 0x60a5fa ? 'blue' : 'white'));
+                window.Visual2.gameFeel.spawnPooledSparks(x, y, z, 8, colorKey);
+                return;
+            }
             for (let i = 0; i < 14; i++) {
                 const sp = new THREE.Mesh(
                     new THREE.SphereGeometry(0.12, 6, 6),
@@ -4330,26 +4495,40 @@
             }
         }
 
-        function triggerGoal() {
+        function triggerGoal(isWinningGoal = false) {
             ballSlipstreamCrit = false;
             if (window.Visual2 && window.Visual2.ball) {
                 window.Visual2.ball.reset();
             }
 
-            // Visual 2.0: 触发进球全流程冲击栈 (Hit Stop -> Camera Punch -> Net Stress -> Exposure Pulse -> Confetti)
-            if (window.Visual2 && window.Visual2.goalImpact) {
-                window.Visual2.goalImpact.execute(ball ? ball.mesh : null, topGoalNet);
-            }
+            if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                window.Visual2.gameFeel.triggerGoal(isWinningGoal);
+                if (window.Visual2.goalImpact) {
+                    window.Visual2.goalImpact.execute(ball ? ball.mesh : null, topGoalNet, isWinningGoal);
+                }
+                const b = document.getElementById('goal-banner');
+                if (b) {
+                    b.innerText = isWinningGoal ? '🏆 MATCH POINT GOAL!' : '⚽ GOAL!';
+                    b.classList.add('show');
+                    setTimeout(() => b.classList.remove('show'), isWinningGoal ? 2000 : 1500);
+                }
+                triggerConfettiShower();
+            } else {
+                // Visual 2.0: 触发进球全流程冲击栈 (Hit Stop -> Camera Punch -> Net Stress -> Exposure Pulse -> Confetti)
+                if (window.Visual2 && window.Visual2.goalImpact) {
+                    window.Visual2.goalImpact.execute(ball ? ball.mesh : null, topGoalNet);
+                }
 
-            screenShake = 1.0;
-            goalCelebrationTimer = 1.65;
-            Sound.play('goal', 1.0);
-            setTimeout(() => Sound.play('whistle', 0.85), 320);
-            const b = document.getElementById('goal-banner');
-            b.classList.add('show');
-            spawnSparks(0, 1.5, G.topZ, 0xfacc15);
-            triggerConfettiShower();
-            setTimeout(() => b.classList.remove('show'), 1500);
+                screenShake = 1.0;
+                goalCelebrationTimer = 1.65;
+                Sound.play('goal', 1.0);
+                setTimeout(() => Sound.play('whistle', 0.85), 320);
+                const b = document.getElementById('goal-banner');
+                b.classList.add('show');
+                spawnSparks(0, 1.5, G.topZ, 0xfacc15);
+                triggerConfettiShower();
+                setTimeout(() => b.classList.remove('show'), 1500);
+            }
         }
 
         function triggerDrain() {
@@ -4358,7 +4537,12 @@
                 window.Visual2.ball.reset();
             }
 
-            screenShake = 0.6;
+            if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                window.Visual2.gameFeel.impactCameraKick(0.15);
+                window.Visual2.gameFeel.triggerScreenShake(0.25, 8.0);
+            } else {
+                screenShake = 0.6;
+            }
             Sound.play('drain', 1.0);
             setTimeout(() => Sound.play('whistle', 0.65), 280);
             const b = document.getElementById('drain-banner');
@@ -4615,6 +4799,7 @@
                 if (window.Visual2.flippers) window.Visual2.flippers.update(dt);
                 if (window.Visual2.postprocessing) window.Visual2.postprocessing.update(dt);
                 if (window.Visual2.goalImpact) window.Visual2.goalImpact.update(dt);
+                if (window.Visual2.gameFeel) window.Visual2.gameFeel.update(dt);
             }
             if (window.ExternalPlayers && window.ExternalPlayers.update) {
                 window.ExternalPlayers.update(dt);
@@ -4658,10 +4843,14 @@
                 let camY = currentCamPos.y;
                 let camZ = currentCamPos.z + (ball ? (ball.z - 1.0) * 0.025 : 0);
 
-                if (screenShake > 0.01) {
-                    camX += (Math.random() - 0.5) * screenShake * 0.8;
-                    camZ += (Math.random() - 0.5) * screenShake * 0.8;
-                    screenShake *= 0.88;
+                if (window.Visual2 && window.Visual2.gameFeel && window.Visual2.gameFeel.version === 'v2') {
+                    // Unified camera kick & shake managed by GameFeel / CameraDirector without compounding
+                } else {
+                    if (screenShake > 0.01) {
+                        camX += (Math.random() - 0.5) * screenShake * 0.8;
+                        camZ += (Math.random() - 0.5) * screenShake * 0.8;
+                        screenShake *= 0.88;
+                    }
                 }
 
                 if (bulletTimeTimer > 0) {
