@@ -528,6 +528,7 @@
             </div>
             <div class="review-row"><span>Ball:</span> <b style="color: #38bdf8;">External</b></div>
             <div class="review-row"><span>Stadium:</span> <b style="color: #38bdf8;">Football Court</b></div>
+            <div class="review-row"><span>Environment:</span> <b id="review-env-status" style="color: #38bdf8;">V1 Baseline</b></div>
             <div class="review-row"><span>Player:</span> <b id="review-player-skin" style="color: #f59e0b;">Alien Technical Dummy</b></div>
             <div class="review-row"><span>Players:</span> <b id="review-players">--</b></div>
             <div class="review-row"><span>Draw Calls:</span> <b id="review-calls">--</b></div>
@@ -559,6 +560,7 @@
     <script src="src/assets/externalBall.js"></script>
     <script src="src/assets/externalStadium.js"></script>
     <script src="src/assets/footballCourtStadium.js"></script>
+    <script src="src/assets/environmentV2.js"></script>
 
     <script>
         /* ==========================================================================
@@ -1237,6 +1239,9 @@
                 if (foundIdx !== -1) currentPitchStyleIdx = foundIdx;
             }
             initThree();
+            if (window.Visual2 && window.Visual2.environment) {
+                window.Visual2.environment.init(scene, G, textures, renderer);
+            }
             loadAllAssets(() => {
                 if (window.FXPool) {
                     window.FXPool.init(scene); // 初始化零GC物理火花/草屑/轨迹对象池 (P0-B)
@@ -1249,6 +1254,10 @@
                 buildFlippers();
                 buildBall();
                 buildGoals();          // 球门与看台完全露出，无遮挡！
+                if (window.Visual2 && window.Visual2.environment && window.Visual2.environment.active) {
+                    window.Visual2.environment.buildSidelineV2();
+                    window.Visual2.environment.attenuateVolumetricGlare();
+                }
                 buildBallSaverShield(); // 开球安全保护能量盾
                 buildPlayers();        // 阵营绝不乌龙
                 setupControls();
@@ -1476,10 +1485,16 @@
                 const callsEl = document.getElementById('review-calls');
                 const trisEl = document.getElementById('review-tris');
                 const skinEl = document.getElementById('review-player-skin');
+                const envEl = document.getElementById('review-env-status');
                 if (fpsEl) fpsEl.innerText = `${currentFps} FPS`;
                 if (playersEl) playersEl.innerText = `${characters ? characters.length : 0}`;
                 if (skinEl && window.ExternalPlayers && window.ExternalPlayers.getSkinDisplayName) {
                     skinEl.innerText = window.ExternalPlayers.getSkinDisplayName();
+                }
+                if (envEl) {
+                    const isV2 = window.Visual2 && window.Visual2.environment && window.Visual2.environment.active;
+                    envEl.innerText = isV2 ? 'V2 (Atmosphere 2.0)' : 'V1 Baseline';
+                    envEl.style.color = isV2 ? '#4ade80' : '#38bdf8';
                 }
                 if (renderer && renderer.info) {
                     if (callsEl) callsEl.innerText = `${renderer.info.render.calls}`;
@@ -1515,6 +1530,14 @@
                 { k: 'stadium_trophy', url: 'assets/stadium/stadium_trophy.png' },
                 { k: 'crowd_strip', url: 'assets/stadium/crowd_strip.png' }
             ];
+            if (window.Visual2 && window.Visual2.environment && window.Visual2.environment.isV2Requested()) {
+                list.push(
+                    { k: 'pitch_v2_diffuse', url: 'assets/pitch/pitch_v2_diffuse.jpg' },
+                    { k: 'pitch_v2_normal', url: 'assets/pitch/pitch_v2_normal.jpg' },
+                    { k: 'pitch_v2_roughness', url: 'assets/pitch/pitch_v2_roughness.jpg' },
+                    { k: 'pitch_v2_ao', url: 'assets/pitch/pitch_v2_ao.jpg' }
+                );
+            }
             let count = 0;
             list.forEach(i => {
                 loader.load(i.url, tex => {
@@ -1623,6 +1646,10 @@
             pitchMesh.position.set(0, 0.01, 1.0);
             pitchMesh.receiveShadow = true;
             scene.add(pitchMesh);
+
+            if (window.Visual2 && window.Visual2.environment && window.Visual2.environment.active) {
+                window.Visual2.environment.applyPitchV2(pitchMesh);
+            }
 
             // 4. 白色嵌入式草皮标线（微反光、吸附草叶法线起伏，告别浮空贴纸感）
             pitchLineMat = new THREE.MeshStandardMaterial({
@@ -2219,10 +2246,15 @@
             });
 
             // 1. 顶部对方主球门 (标准欧式箱式球门 + 真实物理动力学可变形球网)
-            buildGoal(0, G.topZ, 6.8, 2.8, 2.2, postMat, netMat, true);
+            const topGoalGroup = buildGoal(0, G.topZ, 6.8, 2.8, 2.2, postMat, netMat, true);
 
             // 2. 底部我方底门 (漏球判定区，同样配备完整立体球门框架与尼龙织网)
-            buildGoal(0, 18.5, 7.2, 2.5, 1.8, postMat, netMat, false);
+            const bottomGoalGroup = buildGoal(0, 18.5, 7.2, 2.5, 1.8, postMat, netMat, false);
+
+            if (window.Visual2 && window.Visual2.environment && window.Visual2.environment.active) {
+                window.Visual2.environment.applyGoalV2(topGoalGroup, true);
+                window.Visual2.environment.applyGoalV2(bottomGoalGroup, false);
+            }
         }
 
         function buildGoal(cx, cz, w, h, d, postMat, netMat, isTop) {
@@ -2364,6 +2396,7 @@
             if (isTop) {
                 topGoalNet.init(backMesh);
             }
+            return g;
         }
 
         /* ==========================================================================
